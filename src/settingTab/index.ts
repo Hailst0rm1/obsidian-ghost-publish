@@ -13,10 +13,10 @@ export class SettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 
 		containerEl.empty();
-		containerEl.createEl("h2", { text: "Obsidian Ghost Publish" });
+		containerEl.createEl("h1", { text: "Obsidian Ghost Publish" });
 
 		const document = containerEl.createEl("p", {
-			text: `Need help? Take a look on how to use me on `,
+			text: `Need help or have a feature request? Look at `,
 		});
 
 		document.createEl("a", {
@@ -34,19 +34,23 @@ export class SettingTab extends PluginSettingTab {
 			attr: {
 				href: "https://www.buymeacoffee.com/jaynguyens",
 			},
-			text: "buy me a coffe ☕️",
+			text: "donating to me",
 		});
+
+		const note = containerEl.createEl("p", {
+			text: "* - Required"
+		})
 
 		containerEl.createEl("br");
 
 		new Setting(containerEl)
-			.setName("API URL")
+			.setName("API URL *")
 			.setDesc(
-				"Your full URL e.g: https://obsidian.md. Note, domain.com won't work."
+				"Your full URL to reach the API e.g: https://example.com or https://admin.example.com."
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("https://obsidian.md")
+					.setPlaceholder("https://example.com")
 					.setValue(this.plugin.settings.url)
 					.onChange(async (value) => {
 						console.log("Blog URL: " + value);
@@ -56,11 +60,11 @@ export class SettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Admin API Key")
-			.setDesc("Your custom integration Admin API Key")
+			.setName("Admin API Key *")
+			.setDesc("Your custom integration Admin API Key. See https://ghost.org/integrations/custom-integrations/.")
 			.addText((text) =>
 				text
-					.setPlaceholder("6251555c94ca6")
+					.setPlaceholder("6251555c94ca6...")
 					.setValue(this.plugin.settings.adminToken)
 					.onChange(async (value) => {
 						console.log("admin api key: " + value);
@@ -71,10 +75,10 @@ export class SettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Base URL")
-			.setDesc("Your base URL e.g: /ghost")
+			.setDesc("Your website/blog URL, if it varies from your admin URL e.g.: you make api requests to https://admin.example.com but your blog is located at https://example.com.")
 			.addText((text) =>
 				text
-					.setPlaceholder("/ghost")
+					.setPlaceholder("https://blog.com")
 					.setValue(this.plugin.settings.baseURL)
 					.onChange(async (value) => {
 						console.log("Base URL: " + value);
@@ -84,31 +88,18 @@ export class SettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Screenshots Folder")
-			.setDesc("Your screenshots folder e.g: /screenshots (no trailing slash)")
+			.setName("Image Folder")
+			.setDesc("Your image folder e.g: /images (no trailing slash)")
 			.addText((text) =>
 				text
-					.setPlaceholder("/screenshots")
-					.setValue(this.plugin.settings.screenshotsFolder)
+					.setPlaceholder("/images")
+					.setValue(this.plugin.settings.imageFolder)
 					.onChange(async (value) => {
 						console.log("Screenshots Folder: " + value);
-						this.plugin.settings.screenshotsFolder = value;
+						this.plugin.settings.imageFolder = value;
 						await this.plugin.saveSettings();
 					})
 			);
 
-		new Setting(containerEl)
-			.setName("Attachments Folder")
-			.setDesc("Your attachments folder e.g: /attachments (no trailing slash)")
-			.addText((text) =>
-				text
-					.setPlaceholder("/attachments")
-					.setValue(this.plugin.settings.attachmentsFolder)
-					.onChange(async (value) => {
-						console.log("Attachments Folder: " + value);
-						this.plugin.settings.attachmentsFolder = value;
-						await this.plugin.saveSettings();
-					})
-			);
 	}
 }

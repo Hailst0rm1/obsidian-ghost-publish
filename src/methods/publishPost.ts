@@ -1,12 +1,15 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { SettingsProp, ContentProp, DataProp } from "./../types/index";
-import { MarkdownView, Notice, request } from "obsidian";
+import { MarkdownView, Notice, request, FileSystemAdapter, RequestUrlParam, SettingTab, PluginSettingTab } from "obsidian";
 import { sign } from "jsonwebtoken";
-import { parse } from 'node-html-parser'; 
+import { parse } from 'node-html-parser';
+import * as fs from 'fs/promises';
+const FormData = require('form-data');
 
 const md_footnote = require("markdown-it-footnote");
 const matter = require("gray-matter");
 const MarkdownIt = require("markdown-it");
+const GhostAdminAPI = require("@tryghost/admin-api");
 
 const sendToGhost = true; // set to false to test locally
 
@@ -61,16 +64,22 @@ const replaceListsWithHTMLCard = (content: string) => {
 const replacer = (content: string) => {
 	content = replaceListsWithHTMLCard(content);
 	content = replaceFootnotesWithHTMLCard(content);
-	// const replaceYellowCallout = (content: string) => {
-	// 	// replace kg-callout-card-#F1F3F4 with kg-callout-card-yellow
-	// 	content = content.replace(
-	// 		/kg-callout-card-#F1F3F4/g,
-	// 		"kg-callout-card-yellow"
-	// 	);
-	// 	return content;
-	// }
-	// content = replaceYellowCallout(content);
-	console.log(content);
+	content = replaceCalloutWithHTMLCard(content);
+
+	return content;
+};
+
+const replaceCalloutWithHTMLCard = (content: string) => {
+	
+	const calloutCards = content.match(/<div class="callout-(.*?)<\/div><\/div>/gs);
+	console.log("cards", calloutCards);
+	if (calloutCards) {
+		for (const callout of calloutCards) {
+			const htmlCard = `<!--kg-card-begin: html-->${callout}<!--kg-card-end: html-->`;
+			content = content.replace(callout, htmlCard);
+		}
+	}
+
 	return content;
 };
 
@@ -100,7 +109,7 @@ const replaceFootnotesWithHTMLCard = (content: string) => {
 			htmlCard
 		);
 
-		// remove the footnote links
+		//  the footnote links
 		content = content.replace(/<a href="#fnref.*<\/a>/g, "");
 	}
 
@@ -119,6 +128,14 @@ export const publishPost = async (
 	view: MarkdownView,
 	settings: SettingsProp
 ) => {
+
+	// Configure Ghost SDK (https://github.com/TryGhost/SDK)
+	const api = new GhostAdminAPI({
+		url: settings.url,
+		key: settings.adminToken,
+		version: version
+	});
+
 	// Ghost Url and Admin API key
 	const key = settings.adminToken;
 	const [id, secret] = key.split(":");
@@ -131,7 +148,7 @@ export const publishPost = async (
 		audience: `/${version}/admin/`,
 	});
 
-	// get frontmatter
+	// Get frontmatter
 	const noteFile = app.workspace.getActiveFile();
 	const metaMatter = app.metadataCache.getFileCache(noteFile).frontmatter;
 	const data = matter(view.getViewData());
@@ -140,23 +157,123 @@ export const publishPost = async (
 		title: metaMatter?.title || view.file.basename,
 		tags: metaMatter?.tags || [],
 		featured: metaMatter?.featured || false,
-		slug: metaMatter?.slug || view.file.basename,
+		slug: (metaMatter?.slug || view.file.basename).toLowerCase().replace(/\s+/g, "-"),
 		status: metaMatter?.published ? "published" : "draft",
 		custom_excerpt: metaMatter?.excerpt || undefined,
 		feature_image: metaMatter?.feature_image || undefined,
+		meta_title: metaMatter?.meta_title || view.file.basename,
+		meta_description: metaMatter?.meta_description || undefined,
+		canonical_url: metaMatter?.canonical_url || undefined,
+		imageDirectory: metaMatter?.imageDirectory || undefined,
 		updated_at: metaMatter?.updated_at || undefined,
-		"date modified": metaMatter["date modified"] || undefined,
-		imagesYear: metaMatter["ghost-images-year"] || undefined,
-		imagesMonth: metaMatter["ghost-images-month"] || undefined,
+		"date modified": metaMatter && metaMatter["date modified"] ? metaMatter["date modified"] : undefined,
+		imagesYear: metaMatter && metaMatter["ghost-images-year"] ? metaMatter["ghost-images-year"] : undefined,
+		imagesMonth: metaMatter && metaMatter["ghost-images-month"] ? metaMatter["ghost-images-month"] : undefined,
 	};
 
-	const BASE_URL = settings.baseURL;
+	let BASE_URL: string;
+	if (settings.baseURL) {
+		BASE_URL = settings.baseURL;
+	} else {
+		BASE_URL = settings.url;
+	}
 
 	if (frontmatter.custom_excerpt && frontmatter.custom_excerpt.length > 300) {
 		new Notice("Excerpt is too long. Max 300 characters.");
 		return;
 	}
 
+	async function uploadImages(html: string) {
+		// Find images that Ghost Upload supports
+		let imageRegex = /!*\[\[(.*?)\]\]/g;
+
+		// Get full-path to images
+		let imageDirectory: string;
+		let adapter = app.vault.adapter;
+		if (adapter instanceof FileSystemAdapter) {
+			imageDirectory = adapter.getBasePath(); // Vault directory
+			if (settings.imageFolder) {
+				imageDirectory = `${imageDirectory}${settings.imageFolder}`;
+			}
+			if (frontmatter.imageDirectory) { // Extends the image directory
+				imageDirectory = `${imageDirectory}${frontmatter.imageDirectory}`;
+			}
+		}
+
+		let result: RegExpExecArray | null; // Declare the 'result' variable
+
+		while((result = imageRegex.exec(html)) !== null) {
+			let imagePath = `${imageDirectory}/${result[1]}`;
+			let filename = result[1];
+
+			// Make sure it's only filename
+			if (filename.includes('/')) {
+				filename = filename.split('/').pop();
+			}
+			if (filename.includes('\\')) {
+				filename = filename.split('\\').pop();
+			}
+
+			// If extended directory - add image prefix
+			if (frontmatter.imageDirectory) {
+				filename = `${frontmatter.imageDirectory.replace(/\//g, "")}-${filename}`;
+			}
+
+			// Get the image data buffer
+			const fileContent = await fs.readFile(imagePath);
+
+			// Determine the file type based on the filename's extension
+			const fileExtension = filename.split('.').pop();
+			let fileType = '';
+
+			if (fileExtension === 'png') {
+			fileType = 'image/png';
+			} else if (fileExtension === 'jpeg' || fileExtension === 'jpg') {
+			fileType = 'image/jpeg';
+			} // Add more file types if needed
+
+			// Make blob of buffer to allow formdata.append
+			const blob = new Blob([fileContent], { type: fileType });
+
+			console.log("filename", filename);
+			// console.log("imagePath", imagePath);
+			const formData = new FormData();
+			formData.append("file", blob, filename);
+			formData.append("purpose", "image");
+			formData.append("ref", filename);
+
+			try {
+				const response = await fetch(`${settings.url}/ghost/api/admin/images/upload/`, {
+					method: "POST",
+					headers: {
+						Authorization: `Ghost ${token}`,
+						'Accept-Version': `${version}.0`
+					},
+					body: formData
+				});
+				if (response.ok) {
+					// Handle success
+					const data = await response.json();
+					console.log(data);
+				} else {
+					// Handle errors
+					console.error("Error:", response.statusText);
+					console.error("Error:", response.statusText);
+					console.error("Status Code:", response.status); // Add status code
+					console.error("Response Headers:", response.headers); // Log response headers
+					response.text().then(errorText => {
+						console.error("Error Response Text:", errorText); // Log the response body as text
+					}).catch(error => {
+						console.error("Error parsing response text:", error);
+					});
+				}
+				} catch (error) {
+					console.error("Request error:", error);
+				}
+			}
+	}
+
+	// Replaces all images and sound with html
 	const wikiLinkReplacer = (match: any, p1: string) => {
 		if (
 			p1.toLowerCase().includes(".png") ||
@@ -185,17 +302,37 @@ export const publishPost = async (
 					}
 				}
 
-				return `<figure class="kg-card kg-image-card"><img src="${BASE_URL}/content/images/${year}/${month}/${p1
+				// To avoid naming collision we add a prefix of the extended image directory
+				let htmlImage;
+				if (frontmatter.imageDirectory) {
+					const imageNamePrefix = frontmatter.imageDirectory.replace(/\//g, "");
+					htmlImage = `<figure class="kg-card kg-image-card"><img src="${BASE_URL}/content/images/${year}/${month}/${imageNamePrefix}-${p1
 					.replace(/ /g, "-")
 					.replace(
 						/%20/g,
 						"-"
-					)}" alt="${BASE_URL}/content/images/${year}/${month}/${p1
+					)}" alt="${p1
 					.replace(/ /g, "-")
 					.replace(
 						/%20/g,
 						"-"
-					)}"></img><figcaption>${p1}</figcaption></figure>`;
+					)}"></img><figcaption>${BASE_URL}/content/images/${year}/${month}/${imageNamePrefix}-${p1}</figcaption></figure>`
+				} else {
+					htmlImage = `<figure class="kg-card kg-image-card"><img src="${BASE_URL}/content/images/${year}/${month}/${p1
+					.replace(/ /g, "-")
+					.replace(
+						/%20/g,
+						"-"
+					)}" alt="${p1
+					.replace(/ /g, "-")
+					.replace(
+						/%20/g,
+						"-"
+					)}"></img><figcaption>${BASE_URL}/content/images/${year}/${month}/${p1}</figcaption></figure>`
+				}
+				console.log("htmlImage", htmlImage);
+
+				return htmlImage;
 			} catch (err) {
 				console.log("is404Req", err);
 			}
@@ -255,19 +392,20 @@ export const publishPost = async (
 		return linkHTML;
 	}
 
+	console.log("data-content", data.content)
+	uploadImages(data.content);
+	
+	// Removes the first image of the file (it's used as a featured_image in my notes and it's main use here is to upload in the previous function)
+	data.content = data.content.replace(/!*\[\[(.*?)\]\]/, "");
+
 	// convert [[link]] to <a href="BASE_URL/id" class="link-previews">Internal Micro</a>for Ghost
 	const content = data.content.replace(
 		/!*\[\[(.*?)\]\]/g,
 		wikiLinkReplacer
 	);
 
-
 	data.content = content;
 
-	// console.log("data.content", data.content);
-
-	// remove the first h1 (# -> \n) in the content
-	data.content = data.content.replace(/#.*\n/, "");
 
 	// convert youtube embeds to ghost embeds
 	data.content = data.content.replace(
@@ -279,21 +417,21 @@ export const publishPost = async (
 
 	// take the url from view tweet format and replace the entire blockquote with a tweet embed iframe
 	// add a new line before every ([View Tweet]
-	data.content = data.content.replace(
-		/\(\[View Tweet\]/gm,
-		"\n([View Tweet]"
-	);
+	// data.content = data.content.replace(
+	// 	/\(\[View Tweet\]/gm,
+	// 	"\n([View Tweet]"
+	// );
 
-	data.content = data.content.replace(
-		/(^>.*\n.*)*\(https:\/\/twitter.com\/(.*)\/status\/(\d+)\)\)/gm,
-		(match: any, p1: string, p2: string, p3: string) => {
-			console.log("p1", p1);
-			console.log("p2", p2);
+	// data.content = data.content.replace(
+	// 	/(^>.*\n.*)*\(https:\/\/twitter.com\/(.*)\/status\/(\d+)\)\)/gm,
+	// 	(match: any, p1: string, p2: string, p3: string) => {
+	// 		console.log("p1", p1);
+	// 		console.log("p2", p2);
 
-			const url = `https://twitter.com/${p2}/status/${p3}?ref_src=twsrc%5Etfw`;
-			return `<figure class="kg-card kg-embed-card"><div class="twitter-tweet twitter-tweet-rendered"><iframe src="${url}" width="550" height="550" frameborder="0" scrolling="no" allowfullscreen="true" style="border: none; max-width: 100%; min-width: 100%;"></iframe></div></figure>`;
-		}
-	);
+	// 		const url = `https://twitter.com/${p2}/status/${p3}?ref_src=twsrc%5Etfw`;
+	// 		return `<figure class="kg-card kg-embed-card"><div class="twitter-tweet twitter-tweet-rendered"><iframe src="${url}" width="550" height="550" frameborder="0" scrolling="no" allowfullscreen="true" style="border: none; max-width: 100%; min-width: 100%;"></iframe></div></figure>`;
+	// 	}
+	// );
 
 	// replace ==highlight== with highlight span
 	data.content = data.content.replace(
@@ -303,41 +441,7 @@ export const publishPost = async (
 		}
 	);
 
-	console.log("data.content", data.content);
-
-
-	// replace ```ad-summary ...``` with callout block
-	data.content = data.content.replace(
-		/```ad-summary([\S\s]*?)```/g,
-		(match: any, p1: string) => {
-			return `<div class="kg-card kg-callout-card kg-callout-card-gray"><div class="kg-callout-emoji">TL;DR</div><div class="kg-callout-text">${p1}</div></div>`;
-		}
-	);
-
-	// replace =begin-chatgpt-md-comment to =end-chatgpt-md-comment with callout block
-	data.content = data.content.replace(
-		/=begin-chatgpt-md-comment([\S\s]*?)=end-chatgpt-md-comment/g,
-		(match: any, p1: string) => {
-			const p1HrefLink = p1.replace(
-				/(\[.*?\])(\(.*?\))/g,
-				(match: any, p1: string, p2: string) => {
-					return `<a href="${p2.replace(
-						/[\(\)]/g,
-						""
-					)}">${p1.slice(1,-1)}</a>`;
-				}
-			);
-
-			const p1WikiLink = p1HrefLink.replace(
-				/!*\[\[(.*?)\]\]/g,
-				wikiLinkReplacer
-			);
-
-			return `<div class="kg-card kg-callout-card-yellow kg-callout-card"><div class="kg-callout-card-yellow"><div class="kg-callout-emoji">💡</div><div class="kg-callout-text">${p1WikiLink}</div></div></div>`; // color does not work ghost ruins it for some reason
-		}
-	);
-	
-	// fucking fail
+	// Not functional, but if needed:
 	// replace ```bookmark ...``` with callout block
 	// data.content = data.content.replace(
 	// 	/```bookmark([\S\s]*?)```/g,
@@ -347,8 +451,55 @@ export const publishPost = async (
 	// 	}
 	// );
 
+	// replace callouts with callout html
+	data.content = data.content.replace(
+		/>\s*\[!(\w+)\](-?)\s*(.*?)((?=\n>\s*)\s*.*?(?=\n(?!>\s*)))/gs,
+		(match: any, calloutType: string, foldableBool: any, calloutTitle: string, calloutBody: string) => {
+			if (foldableBool) {
+				foldableBool = true;
+			} else {
+				foldableBool = false;
+			}
+			calloutBody = calloutBody.replace(/^>\s*/gm, "");
+			calloutBody = md.render(calloutBody);
+			
+			// console.log("foldable", foldableBool);
+			// console.log("body", calloutBody);
+			return `<div class="callout-${calloutType} flex flex-col rounded-lg border-l-4  p-4 shadow-md"><div class="flex items-center mb-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 callout-${calloutType} mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9l-1 1-1-1M12 17v-6"></path></svg><p class="font-semibold callout-${calloutType}">${calloutTitle}</p><button class="callout-${calloutType} ml-2 calloutFoldButton foldable-${foldableBool}"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path id="arrowPath" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button></div><div id="calloutContent" style="display: block;">${calloutBody}</div></div>`;
+		}
+	);
+
+	console.log("data.content", data.content);
+
+	// replace =begin-chatgpt-md-comment to =end-chatgpt-md-comment with callout block
+	// data.content = data.content.replace(
+	// 	/=begin-chatgpt-md-comment([\S\s]*?)=end-chatgpt-md-comment/g,
+	// 	(match: any, p1: string) => {
+	// 		const p1HrefLink = p1.replace(
+	// 			/(\[.*?\])(\(.*?\))/g,
+	// 			(match: any, p1: string, p2: string) => {
+	// 				return `<a href="${p2.replace(
+	// 					/[\(\)]/g,
+	// 					""
+	// 				)}">${p1.slice(1,-1)}</a>`;
+	// 			}
+	// 		);
+
+	// 		const p1WikiLink = p1HrefLink.replace(
+	// 			/!*\[\[(.*?)\]\]/g,
+	// 			wikiLinkReplacer
+	// 		);
+
+	// 		return `<div class="kg-card kg-callout-card-yellow kg-callout-card"><div class="kg-callout-card-yellow"><div class="kg-callout-emoji">💡</div><div class="kg-callout-text">${p1WikiLink}</div></div></div>`; // color does not work ghost ruins it for some reason
+	// 	}
+	// );
+	
+
 	const htmlContent = contentPost(frontmatter, data);
 			htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
+	
+	console.log("content", htmlContent.posts[0].html);
+
 
 	if (sendToGhost) {
 		// use the ghosts admin /post api to see if post with slug exists
@@ -427,6 +578,7 @@ export const publishPost = async (
 			});
 
 			const json = JSON.parse(result);
+			console.log("content2", result)
 
 			if (json?.posts) {
 				new Notice(
