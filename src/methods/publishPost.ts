@@ -206,12 +206,15 @@ export const publishPost = async (
 			let imagePath = `${imageDirectory}/${result[1]}`;
 			let filename = result[1];
 
+			console.log(filename);
 			// Make sure it's only filename
 			if (filename.includes('/')) {
 				filename = filename.split('/').pop();
+				imagePath = `${imageDirectory}/${filename}`;
 			}
 			if (filename.includes('\\')) {
 				filename = filename.split('\\').pop();
+				imagePath = `${imageDirectory}/${filename}`;
 			}
 
 			// If extended directory - add image prefix
