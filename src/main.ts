@@ -64,7 +64,7 @@ export default class GhostPublish extends Plugin {
 
 				try {
 					// Get abstract representation of source file based on its path
-					const sourceFilePath = `${this.settings.screenshotsFolder}/${fileName}`;
+					const sourceFilePath = `${this.settings.imageFolder}/${fileName}`;
 					const sourceFile: TFile | null =
 						(await this.app.vault.getAbstractFileByPath(
 							sourceFilePath
@@ -76,36 +76,36 @@ export default class GhostPublish extends Plugin {
 					}
 
 					// Move/rename the file by changing its parent folder
-					const newParentFolderName = this.settings.attachmentsFolder;
+					// const newParentFolderName = this.settings.attachmentsFolder;
 
 
-					let renamedFile = sourceFile.name;
+					// let renamedFile = sourceFile.name;
 
-					const result = await renameFileModal(
-						this.app,
-						this.app.vault,
-						sourceFile.name
-					);
+					// const result = await renameFileModal(
+					// 	this.app,
+					// 	this.app.vault,
+					// 	sourceFile.name
+					// );
 
-					if (result) {
-						if (result !== sourceFile.name && result !== "") {
-							renamedFile = result;
-						}
-					} else {
-						return;
-					}
-
-
-					this.app.fileManager.renameFile(
-						sourceFile,
-						`${newParentFolderName}/${renamedFile}.png`
-					);
+					// if (result) {
+					// 	if (result !== sourceFile.name && result !== "") {
+					// 		renamedFile = result;
+					// 	}
+					// } else {
+					// 	return;
+					// }
 
 
+					// this.app.fileManager.renameFile(
+					// 	sourceFile,
+					// 	`${newParentFolderName}/${renamedFile}.png`
+					// );
 
-					console.log(
-						`Successfully moved/renamed ${fileName} to ${newParentFolderName}/${renamedFile}.png`
-					);
+
+
+					// console.log(
+					// 	`Successfully moved/renamed ${fileName} to ${newParentFolderName}/${renamedFile}.png`
+					// );
 				} catch (error) {
 					console.error(error);
 				}
