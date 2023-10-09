@@ -26,6 +26,7 @@ Obsidian Ghost Publish use frontmatter to specify on how you want to publish you
 At the moment, the format is limited to:
 
 ```md
+type: string (default: post)
 title: string (default: file name) 
 tags: (default: [])
 - tag1
@@ -39,6 +40,7 @@ meta_description: string (default: undefined)
 canonical_url: string (default: undefined)
 imageDirectory: string (default: undefined)
 ```
+type: Post/Page
 title: Post title
 tags: Post tags
 featured: Featured post (yes/no)
@@ -54,6 +56,7 @@ imageDirectory: Directory for images, relative path to vault (require "/" in beg
 At the top of your obsidian note:
 ```md
 ---
+type: post
 title: Example Post
 tags:
 - Exampletag

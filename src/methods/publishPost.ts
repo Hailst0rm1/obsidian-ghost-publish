@@ -28,6 +28,15 @@ const contentPost = (frontmatter: ContentProp, data: DataProp) => ({
 	],
 });
 
+const contentPage = (frontmatter: ContentProp, data: DataProp) => ({
+	pages: [
+		{
+			...frontmatter,
+			html: md.render(data.content),
+		},
+	],
+});
+
 const replaceListsWithHTMLCard = (content: string) => {
 	// Ghost swallows the list for some reason, so we need to replace them with a HTML card
 
@@ -49,14 +58,10 @@ const replaceListsWithHTMLCard = (content: string) => {
 
 	// wrap list in HTML card const htmlCard = `<!--kg-card-begin: html--><div class="kg-card-markdown">${list[0]}</div><!--kg-card-end: html-->`;
 	lists.forEach(list => {
-
-		
 		const htmlCard = `<!--kg-card-begin: html--><div>${list.outerHTML}</div><!--kg-card-end: html-->`;
 		content = content.replace(list.outerHTML, htmlCard);
 	});
 
-	
-	
 	return content;
 };
 
@@ -71,7 +76,7 @@ const replacer = (content: string) => {
 
 const replaceCalloutWithHTMLCard = (content: string) => {
 	
-	const calloutCards = content.match(/<div class="callout-(.*?)<\/div><\/div>/gs);
+	const calloutCards = content.match(/<div class="callout-(.*?)<\/div><\/div><\/div>/gs);
 	console.log("cards", calloutCards);
 	if (calloutCards) {
 		for (const callout of calloutCards) {
@@ -154,10 +159,11 @@ export const publishPost = async (
 	const data = matter(view.getViewData());
 
 	const frontmatter = {
+		type: metaMatter?.type || "post",
 		title: metaMatter?.title || view.file.basename,
 		tags: metaMatter?.tags || [],
 		featured: metaMatter?.featured || false,
-		slug: (metaMatter?.slug || view.file.basename).toLowerCase().replace(/\s+/g, "-"),
+		slug: (metaMatter?.slug || metaMatter?.title || view.file.basename).toLowerCase().replace(/\s+/g, "-"),
 		status: metaMatter?.published ? "published" : "draft",
 		custom_excerpt: metaMatter?.excerpt || undefined,
 		feature_image: metaMatter?.feature_image || undefined,
@@ -170,6 +176,16 @@ export const publishPost = async (
 		imagesYear: metaMatter && metaMatter["ghost-images-year"] ? metaMatter["ghost-images-year"] : undefined,
 		imagesMonth: metaMatter && metaMatter["ghost-images-month"] ? metaMatter["ghost-images-month"] : undefined,
 	};
+
+	let type: string;
+	if (frontmatter.type == "post") {
+		type = "posts";
+	} else if (frontmatter.type == "page") {
+		type = "pages";
+	} else {
+		new Notice('The type given is neither "post" or "page"');
+		return;
+	}
 
 	let BASE_URL: string;
 	if (settings.baseURL) {
@@ -309,7 +325,7 @@ export const publishPost = async (
 				let htmlImage;
 				if (frontmatter.imageDirectory) {
 					const imageNamePrefix = frontmatter.imageDirectory.replace(/\//g, "");
-					htmlImage = `<figure class="kg-card kg-image-card"><img src="${BASE_URL}/content/images/${year}/${month}/${imageNamePrefix}-${p1
+					htmlImage = `<figure class="kg-card kg-image-card"><label><input type="checkbox"><img src="${BASE_URL}/content/images/${year}/${month}/${imageNamePrefix}-${p1
 					.replace(/ /g, "-")
 					.replace(
 						/%20/g,
@@ -319,9 +335,9 @@ export const publishPost = async (
 					.replace(
 						/%20/g,
 						"-"
-					)}"></img><figcaption>${BASE_URL}/content/images/${year}/${month}/${imageNamePrefix}-${p1}</figcaption></figure>`
+					)}"></img></label><figcaption>${p1}</figcaption></figure>`
 				} else {
-					htmlImage = `<figure class="kg-card kg-image-card"><img src="${BASE_URL}/content/images/${year}/${month}/${p1
+					htmlImage = `<figure class="kg-card kg-image-card"><label><input type="checkbox"><img src="${BASE_URL}/content/images/${year}/${month}/${p1
 					.replace(/ /g, "-")
 					.replace(
 						/%20/g,
@@ -331,7 +347,7 @@ export const publishPost = async (
 					.replace(
 						/%20/g,
 						"-"
-					)}"></img><figcaption>${BASE_URL}/content/images/${year}/${month}/${p1}</figcaption></figure>`
+					)}"></img></label><figcaption>${p1}</figcaption></figure>`
 				}
 				console.log("htmlImage", htmlImage);
 
@@ -490,7 +506,7 @@ export const publishPost = async (
 				"missing": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
 				"danger": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
 				"error": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-				"target": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+				"target": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crosshair"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>',
 				"pro": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-thumbs-up"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>',
 				"con": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-thumbs-down"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>',
 				"flag": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-flag"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>',
@@ -501,6 +517,7 @@ export const publishPost = async (
 				"bug": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bug"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>',
 				"missinig": '<svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ban"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>'
 			};
+			const arrow = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>'
 
 			// Use the calloutSVGs object to get the SVG based on calloutType
 			const svg = calloutSVGs[calloutType] || 'missing'; // Default to an empty string if calloutType is not found
@@ -508,7 +525,7 @@ export const publishPost = async (
 			
 			// console.log("foldable", foldableBool);
 			// console.log("body", calloutBody);
-			return `<div class="callout-${calloutType} flex flex-col rounded-lg border-l-4  p-4 shadow-md my-4"><div class="flex items-center mb-2">${svg}<p class="font-semibold callout-${calloutType}">${calloutTitle}</p><button class="callout-${calloutType} ml-2 calloutFoldButton foldable-${foldableBool}"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path id="arrowPath" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button></div><div id="calloutContent" style="display: block;">${calloutBody}</div></div>`;
+			return `<div class="callout-${calloutType} flex flex-col rounded-lg border-l-4  p-4 shadow-md my-4"><div class="flex items-center mb-2">${svg}<p class="font-semibold callout-${calloutType}">${calloutTitle}</p><button class="callout-${calloutType} ml-2 callout-fold-button foldable-${foldableBool}">${arrow}</button></div><div class="text-white callout-content"><div class="wrapper">${calloutBody}</div></div></div>`;
 		}
 	);
 
@@ -538,16 +555,34 @@ export const publishPost = async (
 	// );
 	
 
-	const htmlContent = contentPost(frontmatter, data);
-			htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
+	let htmlContent;
+	if (type == "posts") {
+		htmlContent = contentPost(frontmatter, data);
+		htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
+		console.log("content", htmlContent.posts[0].html);
+	} else if (type == "pages)") {
+		htmlContent = contentPage(frontmatter, data);
+		htmlContent.pages[0].html = replacer(htmlContent.pages[0].html);
+		console.log("content", htmlContent.pages[0].html);
+	}
 	
-	console.log("content", htmlContent.posts[0].html);
 
 
 	if (sendToGhost) {
 		// use the ghosts admin /post api to see if post with slug exists
+		// const slugExistsRes = await request({
+		// 	url: `${settings.url}/ghost/api/${version}/admin/${type}/?source=html&filter=slug:${frontmatter.slug}`,
+		// 	method: "GET",
+		// 	contentType: "application/json",
+		// 	headers: {
+		// 		"Access-Control-Allow-Methods": "GET",
+		// 		"Content-Type": "application/json;charset=utf-8",
+		// 		Authorization: `Ghost ${token}`,
+		// 	},
+		// });
+
 		const slugExistsRes = await request({
-			url: `${settings.url}/ghost/api/${version}/admin/posts/?source=html&filter=slug:${frontmatter.slug}`,
+			url: `${settings.url}/ghost/api/${version}/admin/${type}/?source=html&filter=slug:${frontmatter.slug}`,
 			method: "GET",
 			contentType: "application/json",
 			headers: {
@@ -557,89 +592,179 @@ export const publishPost = async (
 			},
 		});
 
-		const slugExists = JSON.parse(slugExistsRes).posts.length > 0;
+		console.log("page/post check", slugExistsRes);
 
-		if (slugExists) {
-			// get id of post if it exists
-			const id = JSON.parse(slugExistsRes).posts[0].id;
-			console.log("slug exists -- updating post:" + id);
+		if (type == "posts") {
+			const slugExists = JSON.parse(slugExistsRes).posts.length > 0;
+			if (slugExists) {
+				// get id of post if it exists
+				const id = JSON.parse(slugExistsRes).posts[0].id;
+				console.log("slug exists -- updating post:" + id);
 
-			// add updated_at iso string to frontmatter
-			frontmatter.updated_at =
-				JSON.parse(slugExistsRes).posts[0].updated_at;
+				// add updated_at iso string to frontmatter
+				frontmatter.updated_at =
+					JSON.parse(slugExistsRes).posts[0].updated_at;
 
-			const htmlContent = contentPost(frontmatter, data);
-			htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
+				const htmlContent = contentPost(frontmatter, data);
+				htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
+				console.log("htmlcontent", htmlContent);
+				
+				// if slug exists, update the post
+				const result = await request({
+					url: `${settings.url}/ghost/api/${version}/admin/${type}/${id}/?source=html`,
+					method: "PUT",
+					contentType: "application/json",
+					headers: {
+						"Access-Control-Allow-Methods": "PUT",
+						"Content-Type": "application/json;charset=utf-8",
+						Authorization: `Ghost ${token}`,
+					},
+					body: JSON.stringify(htmlContent),
+				});
+
+				console.log("result", result);
 			
-			// if slug exists, update the post
-			const result = await request({
-				url: `${settings.url}/ghost/api/${version}/admin/posts/${id}/?source=html`,
-				method: "PUT",
-				contentType: "application/json",
-				headers: {
-					"Access-Control-Allow-Methods": "PUT",
-					"Content-Type": "application/json;charset=utf-8",
-					Authorization: `Ghost ${token}`,
-				},
-				body: JSON.stringify(htmlContent),
-			});
 
-			// console.log(contentPost(frontmatter, data));
+				const json = JSON.parse(result);
 
-			const json = JSON.parse(result);
-
-			if (json?.posts) {
-				new Notice(
-					`"${json?.posts?.[0]?.title}" update has been ${json?.posts?.[0]?.status} successful!`
-				);
-				// https://bram-adams.ghost.io/ghost/#/editor/post/63d3246b7932ae003df67c64
-				openInBrowser(
-					`${settings.url}/ghost/#/editor/post/${json?.posts?.[0]?.id}`
-				);
+				if (json?.posts) {
+					new Notice(
+						`"${json?.posts?.[0]?.title}" update has been ${json?.posts?.[0]?.status} successful!`
+					);
+					// https://bram-adams.ghost.io/ghost/#/editor/post/63d3246b7932ae003df67c64
+					openInBrowser(
+						`${settings.url}/ghost/#/editor/${frontmatter.type}/${json?.posts?.[0]?.id}`
+					);
+				} else {
+					console.log(
+						`${json.errors[0]?.details[0].message} - ${json.errors[0]?.details[0].params.allowedValues}`
+					);
+					console.log(
+						`${json.errors[0].context || json.errors[0].message}`
+					);
+				}
 			} else {
-				console.log(
-					`${json.errors[0]?.details[0].message} - ${json.errors[0]?.details[0].params.allowedValues}`
-				);
-				console.log(
-					`${json.errors[0].context || json.errors[0].message}`
-				);
+				const htmlContent = contentPost(frontmatter, data);
+				htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
+				// upload post
+				const result = await request({
+					url: `${settings.url}/ghost/api/${version}/admin/${type}/?source=html`,
+					method: "POST",
+					contentType: "application/json",
+					headers: {
+						"Access-Control-Allow-Methods": "POST",
+						"Content-Type": "application/json;charset=utf-8",
+						Authorization: `Ghost ${token}`,
+					},
+					body: JSON.stringify(htmlContent),
+				});
+
+				const json = JSON.parse(result);
+				console.log("content2", result)
+
+				if (json?.posts) {
+					new Notice(
+						`"${json?.posts?.[0]?.title}" has been ${json?.posts?.[0]?.status} successful!`
+					);
+					openInBrowser(
+						`${settings.url}/ghost/#/editor/${frontmatter.type}/${json?.posts?.[0]?.id}`
+					);
+				} else {
+					new Notice(
+						`${json.errors[0].context || json.errors[0].message}`
+					);
+					new Notice(
+						`${json.errors[0]?.details[0].message} - ${json.errors[0]?.details[0].params.allowedValues}`
+					);
+				}
+
+				return json;
 			}
-		} else {
-			const htmlContent = contentPost(frontmatter, data);
-			htmlContent.posts[0].html = replacer(htmlContent.posts[0].html);
-			// upload post
-			const result = await request({
-				url: `${settings.url}/ghost/api/${version}/admin/posts/?source=html`,
-				method: "POST",
-				contentType: "application/json",
-				headers: {
-					"Access-Control-Allow-Methods": "POST",
-					"Content-Type": "application/json;charset=utf-8",
-					Authorization: `Ghost ${token}`,
-				},
-				body: JSON.stringify(htmlContent),
-			});
+		} else if (type == "pages") {
+			const slugExists = JSON.parse(slugExistsRes).pages.length > 0;
+			if (slugExists) {
+				// get id of page if it exists
+				const id = JSON.parse(slugExistsRes).pages[0].id;
+				console.log("slug exists -- updating page:" + id);
 
-			const json = JSON.parse(result);
-			console.log("content2", result)
+				// add updated_at iso string to frontmatter
+				frontmatter.updated_at =
+					JSON.parse(slugExistsRes).pages[0].updated_at;
 
-			if (json?.posts) {
-				new Notice(
-					`"${json?.posts?.[0]?.title}" has been ${json?.posts?.[0]?.status} successful!`
-				);
-				openInBrowser(
-					`${settings.url}/ghost/#/editor/post/${json?.posts?.[0]?.id}`
-				);
+				const htmlContent = contentPage(frontmatter, data);
+				htmlContent.pages[0].html = replacer(htmlContent.pages[0].html);
+				
+				// if slug exists, update the page
+				const result = await request({
+					url: `${settings.url}/ghost/api/${version}/admin/${type}/${id}/?source=html`,
+					method: "PUT",
+					contentType: "application/json",
+					headers: {
+						"Access-Control-Allow-Methods": "PUT",
+						"Content-Type": "application/json;charset=utf-8",
+						Authorization: `Ghost ${token}`,
+					},
+					body: JSON.stringify(htmlContent),
+				});
+			
+		
+				// console.log(contentPost(frontmatter, data));
+
+				const json = JSON.parse(result);
+
+				if (json?.pages) {
+					new Notice(
+						`"${json?.pages?.[0]?.title}" update has been ${json?.pages?.[0]?.status} successful!`
+					);
+					// https://bram-adams.ghost.io/ghost/#/editor/post/63d3246b7932ae003df67c64
+					openInBrowser(
+						`${settings.url}/ghost/#/editor/${frontmatter.type}/${json?.pages?.[0]?.id}`
+					);
+				} else {
+					console.log(
+						`${json.errors[0]?.details[0].message} - ${json.errors[0]?.details[0].params.allowedValues}`
+					);
+					console.log(
+						`${json.errors[0].context || json.errors[0].message}`
+					);
+				}
 			} else {
-				new Notice(
-					`${json.errors[0].context || json.errors[0].message}`
-				);
-				new Notice(
-					`${json.errors[0]?.details[0].message} - ${json.errors[0]?.details[0].params.allowedValues}`
-				);
-			}
+				const htmlContent = contentPage(frontmatter, data);
+				htmlContent.pages[0].html = replacer(htmlContent.pages[0].html);
+				// upload post
+				const result = await request({
+					url: `${settings.url}/ghost/api/${version}/admin/${type}/?source=html`,
+					method: "POST",
+					contentType: "application/json",
+					headers: {
+						"Access-Control-Allow-Methods": "POST",
+						"Content-Type": "application/json;charset=utf-8",
+						Authorization: `Ghost ${token}`,
+					},
+					body: JSON.stringify(htmlContent),
+				});
 
-			return json;
+				const json = JSON.parse(result);
+				console.log("content2", result)
+
+				if (json?.pages) {
+					new Notice(
+						`"${json?.pages?.[0]?.title}" has been ${json?.pages?.[0]?.status} successful!`
+					);
+					openInBrowser(
+						`${settings.url}/ghost/#/editor/${frontmatter.type}/${json?.pages?.[0]?.id}`
+					);
+				} else {
+					new Notice(
+						`${json.errors[0].context || json.errors[0].message}`
+					);
+					new Notice(
+						`${json.errors[0]?.details[0].message} - ${json.errors[0]?.details[0].params.allowedValues}`
+					);
+				}
+
+				return json;
+			}
 		}
 	}
 };

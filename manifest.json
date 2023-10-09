@@ -4,7 +4,7 @@
 	"version": "1.3.0",
 	"minAppVersion": "0.12.0",
 	"description": "Single click to publish to Ghost",
-	"author": "@jaynguyens <jay@nguyens.co>",
-	"authorUrl": "https://nguyens.co",
+	"author": "@hailstormsec <kevin@hailstormsec.com>",
+	"authorUrl": "https://hailstormsec.com",
 	"isDesktopOnly": false
 }
