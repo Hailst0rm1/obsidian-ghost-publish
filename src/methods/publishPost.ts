@@ -77,7 +77,6 @@ const replacer = (content: string) => {
 const replaceCalloutWithHTMLCard = (content: string) => {
 	
 	const calloutCards = content.match(/<div class="callout-(.*?)<\/div><\/div><\/div>/gs);
-	console.log("cards", calloutCards);
 	if (calloutCards) {
 		for (const callout of calloutCards) {
 			const htmlCard = `<!--kg-card-begin: html-->${callout}<!--kg-card-end: html-->`;
@@ -222,7 +221,6 @@ export const publishPost = async (
 			let imagePath = `${imageDirectory}/${result[1]}`;
 			let filename = result[1];
 
-			console.log(filename);
 			// Make sure it's only filename
 			if (filename.includes('/')) {
 				filename = filename.split('/').pop();
@@ -254,8 +252,7 @@ export const publishPost = async (
 			// Make blob of buffer to allow formdata.append
 			const blob = new Blob([fileContent], { type: fileType });
 
-			console.log("filename", filename);
-			// console.log("imagePath", imagePath);
+			console.log("image-filename", filename);
 			const formData = new FormData();
 			formData.append("file", blob, filename);
 			formData.append("purpose", "image");
@@ -273,7 +270,7 @@ export const publishPost = async (
 				if (response.ok) {
 					// Handle success
 					const data = await response.json();
-					console.log(data);
+					console.log("success image response", data);
 				} else {
 					// Handle errors
 					console.error("Error:", response.statusText);
@@ -349,8 +346,6 @@ export const publishPost = async (
 						"-"
 					)}"></img></label><figcaption>${p1}</figcaption></figure>`
 				}
-				console.log("htmlImage", htmlImage);
-
 				return htmlImage;
 			} catch (err) {
 				console.log("is404Req", err);
@@ -402,7 +397,6 @@ export const publishPost = async (
 
 		if (link.includes("#")) {
 			[page, header] = link.split("#");
-			console.log("header", header);
 			if (!page) {
 				// Same page referense [[#Header]]
 				return `<a href="#${header.replace(/ /g, "-").toLowerCase()}">${header}</a>`
@@ -421,14 +415,12 @@ export const publishPost = async (
 
 		const url = `${BASE_URL}/${uri}` || `${BASE_URL}/${page}#${header}`;
 		const linkText = text || header || page || link;
-		const linkHTML = `<a href="${url}">${linkText}</a>`;
-		
-		console.log("linkHTML", linkHTML);
+		const linkHTML = `<a href="${url}">${linkText}</a>`;	
 	
 		return linkHTML;
 	}
 
-	console.log("data-content", data.content)
+	console.log("data-content (pre img upload)", data.content)
 	uploadImages(data.content);
 	
 	// Removes the first image of the file (it's used as a featured_image in my notes and it's main use here is to upload in the previous function)
@@ -539,9 +531,6 @@ export const publishPost = async (
 			// Use the calloutSVGs object to get the SVG based on calloutType
 			const svg = calloutSVGs[calloutType] || 'missing'; // Default to an empty string if calloutType is not found
 
-			
-			// console.log("foldable", foldableBool);
-			// console.log("body", calloutBody);
 			return `<div class="callout-${calloutType} flex flex-col rounded-lg border-l-4  p-4 shadow-md my-4"><div class="flex items-center mb-2">${svg}<p class="font-semibold callout-${calloutType}">${calloutTitle}</p><button class="callout-${calloutType} ml-2 callout-fold-button foldable-${foldableBool}">${arrow}</button></div><div class="text-white callout-content"><div class="wrapper">${calloutBody}</div></div></div>`;
 		}
 	);
@@ -724,9 +713,6 @@ export const publishPost = async (
 					body: JSON.stringify(htmlContent),
 				});
 			
-		
-				// console.log(contentPost(frontmatter, data));
-
 				const json = JSON.parse(result);
 
 				if (json?.pages) {
