@@ -201,7 +201,7 @@ export const publishPost = async (
 
 	async function uploadImages(html: string) {
 		// Find images that Ghost Upload supports
-		let imageRegex = /!*\[\[(.*?)\]\]/g;
+		let imageRegex = /!\[\[(.*?)\]\]/g;
 
 		// Get full-path to images
 		let imageDirectory: string;
@@ -395,19 +395,36 @@ export const publishPost = async (
 				)}</div></div></div>`;
 		}
 
-		const [link, text] = p1.split("|");
-		const [id, slug] = link.split("#");
 
+		let page;
+		let header;
+		let [link, text] = p1.split("|");
+
+		if (link.includes("#")) {
+			[page, header] = link.split("#");
+			console.log("header", header);
+			if (!page) {
+				// Same page referense [[#Header]]
+				return `<a href="#${header.replace(/ /g, "-").toLowerCase()}">${header}</a>`
+			}
+		}
+		
 		// Get frontmatter of the linked note
-		const linkedNote = app.metadataCache.getFirstLinkpathDest(id, noteFile.path);
+		const linkedNote = app.metadataCache.getFirstLinkpathDest(page || link, noteFile.path);
 		const linkedNoteMeta = app.metadataCache.getFileCache(linkedNote)?.frontmatter;
 
-		// Get slug from frontmatter
-		const linkedNoteSlug = linkedNoteMeta?.slug;
+		// Get full url from frontmatter
+		let canonUrl = linkedNoteMeta?.canonical_url;
+		if (header && canonUrl) {
+			canonUrl += `#${header.replace(/ /g, "-").toLowerCase()}`
+		}
 
-		const url = `${BASE_URL}/${linkedNoteSlug || slug || id}`;
-		const linkText = text || id || slug;
+		const url = canonUrl || `${BASE_URL}/${page}#${header}`;
+		const linkText = text || header || page || link;
 		const linkHTML = `<a href="${url}">${linkText}</a>`;
+		
+		console.log("linkHTML", linkHTML);
+	
 		return linkHTML;
 	}
 
@@ -415,11 +432,11 @@ export const publishPost = async (
 	uploadImages(data.content);
 	
 	// Removes the first image of the file (it's used as a featured_image in my notes and it's main use here is to upload in the previous function)
-	data.content = data.content.replace(/!*\[\[(.*?)\]\]/, "");
+	data.content = data.content.replace(/!\[\[(.*?)\]\]/, "");
 
 	// convert [[link]] to <a href="BASE_URL/id" class="link-previews">Internal Micro</a>for Ghost
 	const content = data.content.replace(
-		/!*\[\[(.*?)\]\]/g,
+		/!?\[\[(.*?)\]\]/g,
 		wikiLinkReplacer
 	);
 
