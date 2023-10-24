@@ -414,12 +414,12 @@ export const publishPost = async (
 		const linkedNoteMeta = app.metadataCache.getFileCache(linkedNote)?.frontmatter;
 
 		// Get full url from frontmatter
-		let canonUrl = linkedNoteMeta?.canonical_url;
-		if (header && canonUrl) {
-			canonUrl += `#${header.replace(/ /g, "-").toLowerCase()}`
+		let uri = (linkedNoteMeta?.slug || linkedNoteMeta?.title || view.file.basename).toLowerCase().replace(/\s+/g, "-");
+		if (header && uri) {
+			uri += `#${header.replace(/ /g, "-").toLowerCase()}`
 		}
 
-		const url = canonUrl || `${BASE_URL}/${page}#${header}`;
+		const url = `${BASE_URL}/${uri}` || `${BASE_URL}/${page}#${header}`;
 		const linkText = text || header || page || link;
 		const linkHTML = `<a href="${url}">${linkText}</a>`;
 		
@@ -599,7 +599,7 @@ export const publishPost = async (
 		// });
 
 		const slugExistsRes = await request({
-			url: `${settings.url}/ghost/api/${version}/admin/${type}/?source=html&filter=slug:${frontmatter.slug}`,
+			url: `${settings.url}/ghost/api/${version}/admin/${type}/?source=html&filter=slug:${frontmatter.slug}`, 
 			method: "GET",
 			contentType: "application/json",
 			headers: {
