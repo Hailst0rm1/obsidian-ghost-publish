@@ -466,7 +466,7 @@ export const publishPost = async (
 	data.content = data.content.replace(
 		/((?:http(?:s)?:\/\/)?(?<!(?:(?:href|src|xmlns)="\s*|\]\()(?:http(?:s)?:\/\/)?(?:www\.)?)\b(?:[-a-zA-Z0-9@:%_\+~#=]\.?){2,256}\.(?!(pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|txt|rtf|html|htm|csv|xml|zip|rar|7z|tar|gz|mp3|mp4|avi|mov|mkv|flv|wav|ogg|flac|mpg|mpeg|bmp|tif|tiff|eps|ai|psd|svg|css|js|php|asp|py|cpp|java|jar|bat|sh|log|json|yaml|ini|cfg|db|sql|sqlite|pdf|djvu|txt|rtf|html|md|epub|pptm|pptx|docm|dotx|xlsx|xlsm|xlsb|odt|ods|odp|odg|pptx|pptm|odp|txt|ini|json|csv|sql|sqlitedb|tar|gz|xml|yaml|yml|jpg|jpeg|png|bmp|gif|tiff|doc|docx|pdf|xls|xlsx|ppt|pptx|log|zip|html|css|js|php|asp|svg|psd|ico|cur|wav|mp3|avi|mp4|mkv|mov|flv|exe|msi|bat|cmd|jar|app|deb|rpm|sh|vb|vbs|bin|so|tar.gz|tgz|ko|elf|sh|bash|zsh|cli|dev.log))[a-z]{2,6}\b(?:[-a-zA-Z0-9@:%_\+.~#?&//=]*))/g,
 		(match: any, p1: string) => {
-			return `<a href="${p1}">${p1}</a>`
+			return `<a href="${p1}">${p1}</a>`;
 		}
 	)
 
