@@ -70,6 +70,7 @@ const replacer = (content: string) => {
 	content = replaceListsWithHTMLCard(content);
 	content = replaceFootnotesWithHTMLCard(content);
 	content = replaceCalloutWithHTMLCard(content);
+	content = replaceImageWithHTMLCard(content);
 
 	return content;
 };
@@ -86,6 +87,21 @@ const replaceCalloutWithHTMLCard = (content: string) => {
 
 	return content;
 };
+
+const replaceImageWithHTMLCard = (content: string) => {
+	
+	const images = content.match(/<figure class="kg-card kg-image-card"><label><input type="checkbox">(.*?)<\/figcaption><\/figure>/gs);
+	if (images) {
+		for (const image of images) {
+			const htmlCard = `<!--kg-card-begin: html-->${image}<!--kg-card-end: html-->`;
+			content = content.replace(image, htmlCard);
+		}
+	}
+
+	return content;
+};
+
+
 
 const replaceFootnotesWithHTMLCard = (content: string) => {
 	// Ghost swallows the footnote links for some reason, so we need to replace them with a HTML card
@@ -283,10 +299,10 @@ export const publishPost = async (
 						console.error("Error parsing response text:", error);
 					});
 				}
-				} catch (error) {
-					console.error("Request error:", error);
-				}
+			} catch (error) {
+				console.error("Request error:", error);
 			}
+		}
 	}
 
 	// Replaces all images and sound with html
@@ -403,21 +419,30 @@ export const publishPost = async (
 			}
 		}
 		
+
 		// Get frontmatter of the linked note
-		const linkedNote = app.metadataCache.getFirstLinkpathDest(page || link, noteFile.path);
-		const linkedNoteMeta = app.metadataCache.getFileCache(linkedNote)?.frontmatter;
+		let linkedNote;
+		let linkedNoteMeta;
+		try {
+			linkedNote = app.metadataCache.getFirstLinkpathDest(page || link, noteFile.path);
+			linkedNoteMeta = app.metadataCache.getFileCache(linkedNote)?.frontmatter;
 
-		// Get full url from frontmatter
-		let uri = (linkedNoteMeta?.slug || linkedNoteMeta?.title || view.file.basename).toLowerCase().replace(/\s+/g, "-");
-		if (header && uri) {
-			uri += `#${header.replace(/ /g, "-").toLowerCase()}`
+			// Get full url from frontmatter
+			let uri = (linkedNoteMeta?.slug || linkedNoteMeta?.title || view.file.basename).toLowerCase().replace(/\s+/g, "-");
+			if (header && uri) {
+				uri += `#${header.replace(/ /g, "-").toLowerCase()}`
+			}
+
+			const url = `${BASE_URL}/${uri}` || `${BASE_URL}/${page}#${header}`;
+			const linkText = text || header || page || link;
+			const linkHTML = `<a href="${url}">${linkText}</a>`;	
+		
+			return linkHTML;		
+		} catch (error) {
+			console.error("No link found:", error);
+			console.error("Link name:", link);
+			return `[[${p1}]]`; // Return p1 enclosed in double square brackets
 		}
-
-		const url = `${BASE_URL}/${uri}` || `${BASE_URL}/${page}#${header}`;
-		const linkText = text || header || page || link;
-		const linkHTML = `<a href="${url}">${linkText}</a>`;	
-	
-		return linkHTML;
 	}
 
 	console.log("data-content (pre img upload)", data.content)
@@ -433,6 +458,13 @@ export const publishPost = async (
 	);
 
 	data.content = content;
+
+	data.content = data.content.replace(
+		/((?:http(?:s)?:\/\/)?(?<!(?:(?:href|src)="\s*|\]\()(?:http(?:s)?:\/\/)?(?:www\.)?)\b(?:[-a-zA-Z0-9@:%_\+~#=]\.?){2,256}\.(?!(pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|txt|rtf|html|htm|csv|xml|zip|rar|7z|tar|gz|mp3|mp4|avi|mov|mkv|flv|wav|ogg|flac|mpg|mpeg|bmp|tif|tiff|eps|ai|psd|svg|css|js|php|asp|py|cpp|java|jar|bat|sh|log|json|yaml|ini|cfg|db|sql|sqlite|pdf|djvu|txt|rtf|html|md|epub|pptm|pptx|docm|dotx|xlsx|xlsm|xlsb|odt|ods|odp|odg|pptx|pptm|odp|txt|ini|json|csv|sql|sqlitedb|tar|gz|xml|yaml|yml|jpg|jpeg|png|bmp|gif|tiff|doc|docx|pdf|xls|xlsx|ppt|pptx|log|zip|html|css|js|php|asp|svg|psd|ico|cur|wav|mp3|avi|mp4|mkv|mov|flv|exe|msi|bat|cmd|jar|app|deb|rpm|sh|vb|vbs|bin|so|tar.gz|tgz|ko|elf|sh|bash|zsh|cli|dev.log))[a-z]{2,6}\b(?:[-a-zA-Z0-9@:%_\+.~#?&//=]*))/g,
+		(match: any, p1: string) => {
+			return `<a href="${p1}">${p1}</a>`
+		}
+	)
 
 
 	// convert youtube embeds to ghost embeds
