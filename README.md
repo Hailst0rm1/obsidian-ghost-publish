@@ -39,6 +39,7 @@ meta_title: string (default: file name)
 meta_description: string (default: undefined)
 canonical_url: string (default: undefined)
 imageDirectory: string (default: undefined)
+imageUpload: boolean (default: false)
 ```
 type: Post/Page
 title: Post title
@@ -51,6 +52,7 @@ meta_title: Title displayed to search engine result pages
 meta_description: Description displayed to search engine result pages
 canonical_url: The url displayed to search engine result pages
 imageDirectory: Directory for images, relative path to vault (require "/" in beginning, will extend the "Image Folder" setting if set). Mostly to avoid a messy image folder.
+imageUpload: Upload images inside of your note to ghost. Default off to avoid duplicate pictures on server.
 
 ### Example
 At the top of your obsidian note:
@@ -69,6 +71,7 @@ meta_title: Example Post - MyObsidian Blog
 meta_description: Struggeling to submit content to ghot? We will show you in this article!
 canonical_url: https://myblog.com/example-post-but-better
 imageDirectory: /example-post-images
+imageUpload: true
 ---
 ```
 
