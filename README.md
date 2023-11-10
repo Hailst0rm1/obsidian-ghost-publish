@@ -33,6 +33,7 @@ tags: (default: [])
 - tag2
 featured: boolean (default: false)
 published: boolean (default: false)
+access: string (default: public)
 excerpt: string (default: undefined)
 feature_image: string (default: undefined) (URL)
 meta_title: string (default: file name)
@@ -46,6 +47,7 @@ title: Post title
 tags: Post tags
 featured: Featured post (yes/no)
 published: Publish post, otherwise draft (yes/no)
+access: Post accessability (public/members/paid)
 excerpt: The post excerpt
 feature_image: Featured image of post
 meta_title: Title displayed to search engine result pages
@@ -65,6 +67,7 @@ tags:
 - Test
 featured: true
 published: false
+access: paid
 excerpt: This is a test post with the goal of showcasing this plugin
 feature_image: https://myblog.com/content/images/2023/09/example.png
 meta_title: Example Post - MyObsidian Blog
