@@ -4,6 +4,7 @@ import { MarkdownView, Notice, request, FileSystemAdapter, RequestUrlParam, Sett
 import { sign } from "jsonwebtoken";
 import { parse } from 'node-html-parser';
 import * as fs from 'fs/promises';
+import { access } from "fs";
 const FormData = require('form-data');
 
 const md_footnote = require("markdown-it-footnote");
@@ -176,10 +177,11 @@ export const publishPost = async (
 	const frontmatter = {
 		type: metaMatter?.type || "post",
 		title: metaMatter?.title || view.file.basename,
+		slug: (metaMatter?.slug || metaMatter?.title || view.file.basename).toLowerCase().replace(/\s+/g, "-"),
 		tags: metaMatter?.tags || [],
 		featured: metaMatter?.featured || false,
-		slug: (metaMatter?.slug || metaMatter?.title || view.file.basename).toLowerCase().replace(/\s+/g, "-"),
 		status: metaMatter?.published ? "published" : "draft",
+		visibility: metaMatter?.access || "public",
 		custom_excerpt: metaMatter?.excerpt || undefined,
 		feature_image: metaMatter?.feature_image || undefined,
 		meta_title: metaMatter?.meta_title || view.file.basename,
