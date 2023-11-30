@@ -2,6 +2,11 @@
 
 Plugin for publish to [Ghost](https://ghost.org/) site for [Obsidian](https://obsidian.md/) with a single click.
 
+Do you like the plugin? 
+Support me here: https://www.paypal.com/donate/?hosted_button_id=ZGJD7B5YPFLRE 
+Or subscribe to my blog: https://hailstormsec.com/#/portal
+And follow me here: https://hailstormsec.com/about
+
 ## How to use
 
 - Create a custom integration follow this [link](https://ghost.org/integrations/custom-integrations/). You would need an **Admin API Key** and **API URL**.
@@ -13,7 +18,11 @@ Plugin for publish to [Ghost](https://ghost.org/) site for [Obsidian](https://ob
 - Post directly from Obsidian
     - Including callouts (Note: not admonitions)
     - Uploads images
+    - Create dropdown text
     - If post exist, updates it
+- Create and upload Ghost cards from Obsidian
+    - Use the syntax bellow
+    - Gallery is the only one not implemented
 
 ## Plugin settings
 
@@ -27,7 +36,8 @@ At the moment, the format is limited to:
 
 ```md
 type: string (default: post)
-title: string (default: file name) 
+title: string (default: file name)
+slug: string (default: filename in lowercase and spaces = "-")
 tags: (default: [])
 - tag1
 - tag2
@@ -39,11 +49,12 @@ feature_image: string (default: undefined) (URL)
 meta_title: string (default: file name)
 meta_description: string (default: undefined)
 canonical_url: string (default: undefined)
-imageDirectory: string (default: undefined)
-imageUpload: boolean (default: false)
+files_directory: string (default: undefined)
+files_upload: boolean (default: false)
 ```
 type: Post/Page
 title: Post title
+slug: post-title
 tags: Post tags
 featured: Featured post (yes/no)
 published: Publish post, otherwise draft (yes/no)
@@ -53,8 +64,8 @@ feature_image: Featured image of post
 meta_title: Title displayed to search engine result pages
 meta_description: Description displayed to search engine result pages
 canonical_url: The url displayed to search engine result pages
-imageDirectory: Directory for images, relative path to vault (require "/" in beginning, will extend the "Image Folder" setting if set). Mostly to avoid a messy image folder.
-imageUpload: Upload images inside of your note to ghost. Default off to avoid duplicate pictures on server.
+files_directory: Directory for images, relative path to vault (require "/" in beginning, will extend the "Image Folder" setting if set). Mostly to avoid a messy image folder.
+files_upload: Upload images inside of your note to ghost. Default off to avoid duplicate pictures on server.
 
 ### Example
 At the top of your obsidian note:
@@ -62,6 +73,7 @@ At the top of your obsidian note:
 ---
 type: post
 title: Example Post
+slug: example-post
 tags:
 - Exampletag
 - Test
@@ -73,10 +85,14 @@ feature_image: https://myblog.com/content/images/2023/09/example.png
 meta_title: Example Post - MyObsidian Blog
 meta_description: Struggeling to submit content to ghot? We will show you in this article!
 canonical_url: https://myblog.com/example-post-but-better
-imageDirectory: /example-post-images
-imageUpload: true
+files_directory: /example-post-images
+files_upload: true
 ---
 ```
+
+## Ghost cards syntax
+
+At the bottom of the page you will find the markdown file with the syntax used to create the page: https://hailstormsec.com/style-guide
 
 ## How to run on dev
 
@@ -94,11 +110,24 @@ imageUpload: true
 Q: Why doesn't my images upload?
 A: Probably due to your CORS settings. Double check by opening dev-tools in obsidian (CTRL+SHIFT+I) If you have control over the server you can implement [these nginx settings](https://enable-cors.org/server_nginx.html).
 
-Q: Callouts doesn't display properly?
-A: The callouts are translates for tailwind-css with custom classes to fit my theme. Either you can edit return value under	"replace callouts with callout html" (publishPost.ts) or you can buy my theme [here](coming-soon).
+Q: Some elements look ugly, can I fix that?
+A: The majority of elements created with this plugin uses ghosts own css classes (class="kg-..."). In the ghost headers you can override anything you're not happy with. If it doesn't use a ghost class, you can simply override the element:
 
-Q: Why is the first image gettins removed?
-A: I have a featured image on my posts even in obsidian, but to prevent getting two of the same image in ghost, the plugin removes one of them.
+```html
+<!-- Example -->
+<style>
+    .kg-embed-card {
+        /* your-css */
+    }
+
+    table {
+        /* your-css */
+    }
+</style>
+```
+
+Q: Why is the first image getting removed?
+A: I have a featured image on my posts even in obsidian, but to prevent getting two of the same image in ghost, the plugin removes the first image in the note.
 
 ### Issues & Requests
 
