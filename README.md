@@ -49,7 +49,6 @@ feature_image: string (default: undefined) (URL)
 meta_title: string (default: file name)
 meta_description: string (default: undefined)
 canonical_url: string (default: undefined)
-files_directory: string (default: undefined)
 files_upload: boolean (default: false)
 ```
 type: Post/Page
@@ -64,7 +63,6 @@ feature_image: Featured image of post
 meta_title: Title displayed to search engine result pages
 meta_description: Description displayed to search engine result pages
 canonical_url: The url displayed to search engine result pages
-files_directory: Directory for images, relative path to vault (require "/" in beginning, will extend the "Image Folder" setting if set). Mostly to avoid a messy image folder.
 files_upload: Upload images inside of your note to ghost. Default off to avoid duplicate pictures on server.
 
 ### Example

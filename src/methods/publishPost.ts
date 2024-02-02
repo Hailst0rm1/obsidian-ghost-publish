@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import { access } from "fs";
 const mime = require('mime-types');
 const FormData = require('form-data');
+const cheerio = require('cheerio');
 
 const md_footnote = require("markdown-it-footnote");
 const matter = require("gray-matter");
@@ -40,32 +41,55 @@ const contentPage = (frontmatter: ContentProp, data: DataProp) => ({
 });
 
 const replaceListsWithHTMLCard = (content: string) => {
-	// Ghost swallows the list for some reason, so we need to replace them with a HTML card
+   const $ = cheerio.load(content);
 
-	let parsedContent = parse(content);
-	// add font family var(--font-serif) to lists > li and replace content
-	const li = parsedContent.querySelectorAll('li').filter(li => {
-		return li.attributes.class !== 'footnotes-list';
-	});
-	li.forEach(li => {
-		li.setAttribute('style', 'font-family: var(--font-serif)');
-	});
+   const topLevelLists = $('ul:not(ul ul), ol:not(ol ol)').filter(':has(> :not(ol, ul))');
 
-	content = parsedContent.toString();
-	parsedContent = parse(content); // i couldnt think of a better way to do this lmao
+   if (topLevelLists.length > 0) {
+      topLevelLists.each((_index: any, list: any) => {
+         const listHtml = $.html(list); // Use $.html() to include the outer tags
+         const htmlCard = `<!--kg-card-begin: html--><div>${listHtml}</div><!--kg-card-end: html-->`;
+         content = content.replace(listHtml, htmlCard);
+      });
+   }
 
-	const lists = parsedContent.querySelectorAll('ul, ol').filter(list => {
-		return list.parentNode.tagName === null && list.attributes.class !== 'footnotes-list';
-	});
-
-	// wrap list in HTML card const htmlCard = `<!--kg-card-begin: html--><div class="kg-card-markdown">${list[0]}</div><!--kg-card-end: html-->`;
-	lists.forEach(list => {
-		const htmlCard = `<!--kg-card-begin: html--><div>${list.outerHTML}</div><!--kg-card-end: html-->`;
-		content = content.replace(list.outerHTML, htmlCard);
-	});
-
-	return content;
+   return content;
 };
+
+
+
+
+// const replaceListsWithHTMLCard = (content: string) => {
+// 	// Ghost swallows the list for some reason, so we need to replace them with a HTML card
+
+// 	// let parsedContent = parse(content);
+// 	// console.log("content?", parsedContent.toString());
+	
+// 	// // add font family var(--font-serif) to lists > li and replace content
+// 	// const li = parsedContent.querySelectorAll('li').filter(li => {
+// 	// 	return li.attributes.class !== 'footnotes-list' && li.attributes.class !== 'checkbox-text';
+// 	// });
+// 	// li.forEach(li => {
+// 	// 	li.setAttribute('style', 'font-family: var(--font-serif)');
+// 	// });
+
+// 	// content = parsedContent.toString();
+// 	// parsedContent = parse(content); // i couldnt think of a better way to do this lmao
+
+// 	// const lists = parsedContent.querySelectorAll('ul, ol').filter(list => {
+// 	// 	console.log("parent", list.parentNode.tagName);
+// 	// 	return list.parentNode.tagName === null && list.attributes.class !== 'footnotes-list' && list.attributes.class !== 'checkbox-list';
+// 	// });
+
+
+// 	// wrap list in HTML card const htmlCard = `<!--kg-card-begin: html--><div class="kg-card-markdown">${list[0]}</div><!--kg-card-end: html-->`;
+// 	lists.forEach(list => {
+// 		const htmlCard = `<!--kg-card-begin: html--><div>${list.outerHTML}</div><!--kg-card-end: html-->`;
+// 		content = content.replace(list.outerHTML, htmlCard);
+// 	});
+
+// 	return content;
+// };
 
 // run all replacers on the content
 const replacer = (content: string) => {
@@ -77,9 +101,25 @@ const replacer = (content: string) => {
 	content = replaceSigninCardWithHTMLCard(content);
 	content = replaceAcronymWithHTMLCard(content);
 	content = replaceAltquoteWithHTMLCard(content);
+	content = replaceToggleCardWithHTMLCard(content);
+	content = removeLinksInCode(content);
+	content = boldText(content);
+	content = replaceCheckboxWithHTMLCard(content);
 
 	return content;
 };
+
+const replaceCheckboxWithHTMLCard = (content: string) => {
+	const checkboxes = content.match(/<div><ul style="list-style-type: none;list-style-position: inside;padding-left:0;"(.*?)<\/ul><\/div>/gs);
+	if (checkboxes) {
+		for (const checkbox of checkboxes) {
+			const htmlCard = `<!--kg-card-begin: html-->${checkbox}<!--kg-card-end: html-->`;
+			content = content.replace(checkbox, htmlCard);
+		}
+	}
+
+	return content;
+}
 
 const replaceCalloutWithHTMLCard = (content: string) => {
 	
@@ -120,6 +160,20 @@ const replaceHeaderCardWithHTMLCard = (content: string) => {
 	return content;
 }
 
+// When containing links the toggle cards wont include them - thus we make it into a html card
+const replaceToggleCardWithHTMLCard = (content: string) => {
+	const toggles = content.match(/<div class="kg-card kg-toggle-card"(.*?)<\/div><\/div>/gs);
+	if (toggles) {
+		for (const toggle of toggles) {
+			const htmlCard = `<!--kg-card-begin: html-->${toggle}<!--kg-card-end: html-->`;
+			content = content.replace(toggle, htmlCard);
+		} 
+	}
+
+	return content;
+}
+
+
 // For some reason the signin card shits the bed when trying to send the correct html via the api - so we wrap it in a html-block
 const replaceSigninCardWithHTMLCard = (content: string) => {
 	const signins = content.match(/<div class="kg-card kg-signup-card kg-v2(.*?)<\/div><\/div><\/div>/gs);
@@ -138,14 +192,12 @@ const replaceAcronymWithHTMLCard = (content: string) => {
 	const acronyms = content.match(/(.*)<div class="text-dropdown"><span>(.*?)<\/p><\/div><\/div>(.*)/g);
 	if (acronyms) {
 		for (const acronym of acronyms) {
-			console.log("acronym", acronym);
 			let newAcronym = acronym.replace(
 				/<\/div><\/div>(.*?)(?:<div class="text-dropdown">|\n|$)/g,
 				(match: any, text: string) => {
- 			    	return match.replace(new RegExp(text, 'g'), `<p>${text}</p>`);
+ 			    	return match.replace(text, `<span>${text}</span>`);
 				}
 			)
-			console.log("acronym post", newAcronym);
 			const htmlCard = `<!--kg-card-begin: html--><div class="acronym-wrapper">${newAcronym}</div><!--kg-card-end: html-->`;
 			content = content.replace(acronym, htmlCard);
 		} 
@@ -164,6 +216,36 @@ const replaceAltquoteWithHTMLCard = (content: string) => {
 		} 
 	}
 
+	return content;
+}
+
+// Links will still be replaced with html even if a code block/segment, thus we have to remove them.
+const removeLinksInCode = (content: string) => {
+	const codeSegments = content.match(/<code(.*?)<\/code>/gs);
+	if (codeSegments)  {
+		for (const code of codeSegments) {
+			let newCodeSegment = code.replace(
+				/(?:<|&lt;)a(?:.*?)(?:>|&gt;)(.*?)(?:<|&lt;)\/a(?:>|&gt;)/g,
+				(match: any, link: string) => {
+					return link;
+				}
+			)
+			content = content.replace(code, newCodeSegment);
+		}
+	}
+	return content;
+}
+
+// I've noticed that fore some reason it sometimes misses some of the bolding markdown, thus we fix it here
+const boldText = (content: string) => {
+	const boldSegments = content.match(/\*\*(?:.*?)\*\*/g);
+	if (boldSegments) {
+		for (const segment of boldSegments) {
+			const segmentWithoutStars = segment.substring(2, segment.length - 2);
+			const htmlCard = `<strong>${segmentWithoutStars}</strong>`;
+			content = content.replace(segment, htmlCard);
+		} 
+	}
 	return content;
 }
 
@@ -253,7 +335,6 @@ export const publishPost = async (
 		meta_title: metaMatter?.meta_title || view.file.basename,
 		meta_description: metaMatter?.meta_description || undefined,
 		canonical_url: metaMatter?.canonical_url || undefined,
-		files_directory: metaMatter?.files_directory || undefined,
 		files_upload: metaMatter?.files_upload || false,
 		updated_at: metaMatter?.updated_at || undefined,
 		"date modified": metaMatter && metaMatter["date modified"] ? metaMatter["date modified"] : undefined,
@@ -290,36 +371,36 @@ export const publishPost = async (
 		let adapter = app.vault.adapter;
 		if (adapter instanceof FileSystemAdapter) {
 			files_directory = adapter.getBasePath(); // Vault directory
-			if (settings.imageFolder) {
-				files_directory = `${files_directory}${settings.imageFolder}`;
-			}
-			if (frontmatter.files_directory) { // Extends the image directory
-				files_directory = `${files_directory}${frontmatter.files_directory}`;
-			}
+		// 	if (settings.imageFolder) {
+		// 		files_directory = `${files_directory}${settings.imageFolder}`;
+		// 	}
+		// 	if (frontmatter.files_directory) { // Extends the image directory
+		// 		files_directory = `${files_directory}${frontmatter.files_directory}`;
+		// 	}
 		}
 
 		let imagePath = `${files_directory}/${file}`;
 		let filename = file;
+		let prefix;
 
 		// Make sure it's only filename
 		if (filename.includes('|')) {
 			filename = filename.split('|')[0];
-			imagePath = `${files_directory}/${filename}`;
 		}
 		if (filename.includes('/')) {
+			prefix = filename.split('/')[-2];
 			filename = filename.split('/').pop();
-			imagePath = `${files_directory}/${filename}`;
 		}
 		if (filename.includes('\\')) {
+			prefix = filename.split('\\')[-2];
 			filename = filename.split('\\').pop();
-			imagePath = `${files_directory}/${filename}`;
 		}
 
 		// If extended directory - add image prefix
-		if (frontmatter.files_directory) {
-			filename = `${frontmatter.files_directory.replace(/\//g, "")}-${filename}`;
+		if (prefix) {
+			filename = `${prefix.replace(/\//g, "")}-${filename}`;
 		}
-
+		
 		// Get the image data buffer
 		const fileContent = await fs.readFile(imagePath);
 
@@ -345,7 +426,6 @@ export const publishPost = async (
 		// Make blob of buffer to allow formdata.append
 		const blob = new Blob([fileContent], { type: fileType });
 
-		console.log("image-filename", filename);
 		const formData = new FormData();
 		formData.append("file", blob, filename);
 		formData.append("purpose", purpose);
@@ -415,9 +495,16 @@ export const publishPost = async (
 				}
 
 				let [picture, alt] = p1.split("|");
-				console.log("files_upload", frontmatter.files_upload);
 				if (frontmatter.files_upload) {
 					uploadContent(picture);
+				}
+				
+
+				// Only takes the filename instead of path (also adds a prefix)
+				let prefix;
+				if (picture.includes("/")) {
+					prefix = picture.split("/")[-2];
+					picture = picture.split("/").pop();
 				}
 				
 				let width = "";
@@ -430,8 +517,8 @@ export const publishPost = async (
 
 				// To avoid naming collision we add a prefix of the extended image directory
 				let htmlImage;
-				if (frontmatter.files_directory) {
-					const imageNamePrefix = frontmatter.files_directory.replace(/\//g, "");
+				if (prefix) {
+					const imageNamePrefix = prefix.replace(/\//g, "");
 					htmlImage = `<figure class="kg-card kg-image-card ${width}"><img class="kg-image" alt="${alt}" src="${BASE_URL}/content/images/${year}/${month}/${imageNamePrefix}-${picture
 					.replace(/ /g, "-")
 					.replace(
@@ -482,9 +569,16 @@ export const publishPost = async (
 				uploadContent(audio);
 			}
 
+			// Only takes the filename instead of path (also adds a prefix)
+			let prefix;
+			if (audio.includes("/")) {
+				prefix = audio.split("/")[-2];
+				audio = audio.split("/").pop();
+			}
+
 			let htmlAudio;
-			if (frontmatter.files_directory) {
-				const audioNamePrefix = frontmatter.files_directory.replace(/\//g, "");
+			if (prefix) {
+				const audioNamePrefix = prefix.replace(/\//g, "");
 				htmlAudio = `<div class="kg-card kg-audio-card">
 				<div class="kg-audio-player-container"><audio src="${BASE_URL}/content/media/${year}/${month}/${audioNamePrefix}-${audio
 					.replace(/ /g, "-")
@@ -532,6 +626,13 @@ export const publishPost = async (
 					uploadContent(video);
 				}
 
+				// Only takes the filename instead of path (also adds a prefix)
+				let prefix;
+				if (video.includes("/")) {
+					prefix = video.split("/")[-2];
+					video = video.split("/").pop();
+				}
+
 				let width = "";
 				if (alt) {
 					if (alt.includes('(wide)')) {width = "kg-width-wide";alt = alt.replace('(wide)',"");}
@@ -541,8 +642,8 @@ export const publishPost = async (
 				}
 
 				let htmlVideo;
-				if (frontmatter.files_directory) {
-					const videoNamePrefix = frontmatter.files_directory.replace(/\//g, "");
+				if (prefix) {
+					const videoNamePrefix = prefix.replace(/\//g, "");
 					htmlVideo = `<figure class="kg-card kg-video-card ${width}"><div class="kg-video-container"><video src="${BASE_URL}/content/media/${year}/${month}/${videoNamePrefix}-${video
 						.replace(/ /g, "-")
 						.replace(
@@ -605,21 +706,112 @@ export const publishPost = async (
 
 	console.log("data-content (pre uploads/link replacements)", data.content);
 
+	
 	// Removes the first image of the file (it's used as a featured_image in my notes and it's main use here is to upload in the previous function)
+	if (settings.firstAsFeatured) {
+		data.content = data.content.replace(
+			/(?:(?:!\[\[(.*?)\]\](?: *\n(.*))?)|(?:!\[(.*?)\]\((.*?)\)(?: *\n(.*))?))/,
+			(match: any, imageAndAlt: string, imageCaption: string, imageAlt: string, image2: string, imageCaption2: string) => {
+				if (imageAndAlt) {
+					let [image, alt] = imageAndAlt.split("|");
+					if (frontmatter.files_upload) {
+						uploadContent(image);
+						let year;
+						let month;
+						if (frontmatter.imagesYear && frontmatter.imagesMonth) {
+							year = frontmatter.imagesYear;
+							month = frontmatter.imagesMonth;
+		
+							if (month < 10) {
+								month = `0${month}`;
+							}
+						} else {
+							// get the year
+							year = new Date().getFullYear();
+							// get the month
+							const monthNum = new Date().getMonth() + 1;
+							month = monthNum.toString();
+							if (monthNum < 10) {
+								month = `0${monthNum}`;
+							}
+						}
+						let prefix;
+						if (image.includes("/")) {
+							prefix = image.split("/")[-2];
+							image = image.split("/").pop();
+						}
+						if (prefix) {
+							const imageNamePrefix = prefix.replace(/\//g, "");
+							frontmatter.feature_image = `${settings.baseURL}/content/images/${year}/${month}/${imageNamePrefix}-${image}`
+						} else {
+							frontmatter.feature_image = `${settings.baseURL}/content/images/${year}/${month}/${image}`
+						}
+					}
+					if (!alt) {alt = imageAndAlt;}
+					frontmatter.feature_image_caption = imageCaption;
+					frontmatter.feature_image_alt = alt;
+					return "";
+				} else if (image2) {
+					if (!imageAlt) {imageAlt = image2.split("/").pop();}
+					frontmatter.feature_image_caption = imageCaption2;
+					frontmatter.feature_image_alt = imageAlt;
+					frontmatter.feature_image = image2;
+					return "";
+				}
+			}
+		);
+	}
+
+	// Convert markdown checkbox
 	data.content = data.content.replace(
-		/!\[\[(.*?)\]\](?: *\n(.*))?/,
-		(match: any, imageAndAlt: string, imageCaption: string) => {
-			let alt = imageAndAlt.split("|")[1];
-			if (!alt) {alt = imageAndAlt;}
-			frontmatter.feature_image_caption = imageCaption;
-			frontmatter.feature_image_alt = alt;
-			return "";
+		/(?:\t*- \[(?: |x)\] (?:.*)\n?)+/g,
+		(match:any) => {
+
+			const lines: string[] = match.split('\n').slice(0, -1);
+			let htmlContent = `<div><ul style="list-style-type: none;list-style-position: inside;padding-left:0;" class="checkbox-list">`;
+			let currentIndent = 0;
+			let indent = 0;
+			let checked;
+
+			for (const line of lines) {
+				currentIndent = (line.match(/^\t*/)?.[0].length) || 0;
+				if (indent < currentIndent) {
+					htmlContent += '<ul style="list-style-type: none;list-style-position: inside;" class="checkbox-list">';
+				} else if (indent > currentIndent) {
+					htmlContent += '</ul>'.repeat(indent - currentIndent);
+				}
+				if (line.includes("[x]")) {
+					checked = true;
+				} else {
+					checked = false;
+				}
+				htmlContent += `<li class="checkbox-text"><input type="checkbox" class="checkbox" ${checked ? 'checked="checked"' : ""}/><label>${line.trim()}</label></li>`
+			}
+
+			htmlContent += '</ul></div>';
+			
+			htmlContent = htmlContent.replace(/- \[(?: |x)\] /g, "");
+			
+			return htmlContent;
 		}
-	);
+	)
+
+	// Convert markdown list to html
+	// data.content = data.content.replace(
+	// 	/(?:\t*(?:-|[0-9]+\.) +(?:.*)+n?)+/g,
+	// 	(match:any) => {
+	// 		let ul = match.includes(/^\t*-/);
+	// 		let lists = match.replace(/- +/g, "");
+
+	// 		const lines: string[] = lists.split('\n');
+	// 		let htmlContent = `<div><${ul ? 'ul' : 'ol'}>`
+	// 	}
+	// )
+
 
 	// Convert "Download: [[file.ext]]" to ghost file card
 	data.content = data.content.replace(
-		/Download: *\[\[(.*?)\]\](?: *\n(.*))?/g,
+		/Download: *!?\[\[(.*?)\]\](?: *\n(.*))?/g,
 		(match: any, file: string, description: string) => {
 			let year;
 			let month;
@@ -649,8 +841,14 @@ export const publishPost = async (
 				uploadContent(filename)
 			}
 
-			if (frontmatter.files_directory) {
-				const fileNamePrefix = frontmatter.files_directory.replace(/\//g, "");
+			let prefix;
+			if (filename.includes("/")) {
+				prefix = filename.split("/")[-2];
+				filename = filename.split("/").pop();
+			}
+
+			if (prefix) {
+				const fileNamePrefix = prefix.replace(/\//g, "");
 				return `<div class="kg-card kg-file-card"><a class="kg-file-card-container" href="${BASE_URL}/content/files/${year}/${month}/${fileNamePrefix}-${filename}"><div class="kg-file-card-contents"><div class="kg-file-card-title">${title}</div><div class="kg-file-card-caption">${description}</div></div></div>`;
 			}
 			return `<div class="kg-card kg-file-card"><a class="kg-file-card-container" href="${BASE_URL}/content/files/${year}/${month}/${filename}"><div class="kg-file-card-contents"><div class="kg-file-card-title">${title}</div><div class="kg-file-card-caption">${description}</div></div></div>`;
@@ -690,8 +888,14 @@ export const publishPost = async (
 				uploadContent(filename)
 			}
 
-			if (frontmatter.files_directory) {
-				const fileNamePrefix = frontmatter.files_directory.replace(/\//g, "");
+			let prefix;
+			if (filename.includes("/")) {
+				prefix = filename.split("/")[-2];
+				filename = filename.split("/").pop();
+			}
+
+			if (prefix) {
+				const fileNamePrefix = prefix.replace(/\//g, "");
 				filename = filename.replace(/^/, `${fileNamePrefix}-`)
 				console.log('store filename', filename)
 			}
@@ -707,7 +911,7 @@ export const publishPost = async (
 	// url
 	// <empty line>
 	data.content = await data.content.replace(
-		/\n{2}((?:(?:href|src|xmlns)="\s*)?(?:http(?:s)?:\/\/)?\b(?:[-a-zA-Z0-9@:%_\+~#=]\.?){2,256}\.(?!(?:pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|txt|rtf|html|htm|csv|xml|zip|rar|7z|tar|gz|mp3|mp4|avi|mov|mkv|flv|wav|ogg|flac|mpg|mpeg|bmp|tif|tiff|eps|ai|psd|svg|css|js|php|asp|py|cpp|java|jar|bat|sh|log|json|yaml|ini|cfg|db|sql|sqlite|pdf|djvu|txt|rtf|html|md|epub|pptm|pptx|docm|dotx|xlsx|xlsm|xlsb|odt|ods|odp|odg|pptx|pptm|odp|txt|ini|json|csv|sql|sqlitedb|tar|gz|xml|yaml|yml|jpg|jpeg|png|bmp|gif|tiff|doc|docx|pdf|xls|xlsx|ppt|pptx|log|zip|html|css|js|php|asp|svg|psd|ico|cur|wav|mp3|avi|mp4|mkv|mov|flv|exe|msi|bat|cmd|jar|app|deb|rpm|sh|vb|vbs|bin|so|tar.gz|tgz|ko|elf|sh|bash|zsh|cli|dev.log))[a-z]{2,6}\b(?:[-a-zA-Z0-9@:%_\+.~#?&//=]*))(?: *\n(.*))?\n{2}/g,
+		/\n{2}((?:(?:href|src|xmlns)="\s*)?(?:mailto:)?(?:http(?:s)?:\/\/)?\b(?:[-a-zA-Z0-9@%_\+~#=]\.?){2,256}\.(?:aaa|aarp|abb|abbott|abbvie|abc|able|abogado|abudhabi|ac|academy|accenture|accountant|accountants|aco|actor|ad|ads|adult|ae|aeg|aero|aetna|af|afl|africa|ag|agakhan|agency|ai|aig|airbus|airforce|airtel|akdn|al|alibaba|alipay|allfinanz|allstate|ally|alsace|alstom|am|amazon|americanexpress|americanfamily|amex|amfam|amica|amsterdam|analytics|android|anquan|anz|ao|aol|apartments|app|apple|aq|aquarelle|ar|arab|aramco|archi|army|arpa|art|arte|as|asda|asia|associates|at|athleta|attorney|au|auction|audi|audible|audio|auspost|author|auto|autos|avianca|aw|aws|ax|axa|az|azure|ba|baby|baidu|banamex|bananarepublic|band|bank|bar|barcelona|barclaycard|barclays|barefoot|bargains|baseball|basketball|bauhaus|bayern|bb|bbc|bbt|bbva|bcg|bcn|bd|be|beats|beauty|beer|bentley|berlin|best|bestbuy|bet|bf|bg|bh|bharti|bi|bible|bid|bike|bing|bingo|bio|biz|bj|black|blackfriday|blockbuster|blog|bloomberg|blue|bm|bms|bmw|bn|bnpparibas|bo|boats|boehringer|bofa|bom|bond|boo|book|booking|bosch|bostik|boston|bot|boutique|box|br|bradesco|bridgestone|broadway|broker|brother|brussels|bs|bt|build|builders|business|buy|buzz|bv|bw|by|bz|bzh|ca|cab|cafe|cal|call|calvinklein|cam|camera|camp|canon|capetown|capital|capitalone|car|caravan|cards|care|career|careers|cars|casa|case|cash|casino|cat|catering|catholic|cba|cbn|cbre|cc|cd|center|ceo|cern|cf|cfa|cfd|cg|ch|chanel|channel|charity|chase|chat|cheap|chintai|christmas|chrome|church|ci|cipriani|circle|cisco|citadel|citi|citic|city|ck|cl|claims|cleaning|click|clinic|clinique|clothing|cloud|club|clubmed|cm|cn|co|coach|codes|coffee|college|cologne|com|comcast|commbank|community|company|compare|computer|comsec|condos|construction|consulting|contact|contractors|cooking|cool|coop|corsica|country|coupon|coupons|courses|cpa|cr|credit|creditcard|creditunion|cricket|crown|crs|cruise|cruises|cu|cuisinella|cv|cw|cx|cy|cymru|cyou|cz|dabur|dad|dance|data|date|dating|datsun|day|dclk|dds|de|deal|dealer|deals|degree|delivery|dell|deloitte|delta|democrat|dental|dentist|desi|design|dev|dhl|diamonds|diet|digital|direct|directory|discount|discover|dish|diy|dj|dk|dm|dnp|do|docs|doctor|dog|domains|dot|download|drive|dtv|dubai|dunlop|dupont|durban|dvag|dvr|dz|earth|eat|ec|eco|edeka|edu|education|ee|eg|email|emerck|energy|engineer|engineering|enterprises|epson|equipment|er|ericsson|erni|es|esq|estate|et|eu|eurovision|eus|events|exchange|expert|exposed|express|extraspace|fage|fail|fairwinds|faith|family|fan|fans|farm|farmers|fashion|fast|fedex|feedback|ferrari|ferrero|fi|fidelity|fido|film|final|finance|financial|fire|firestone|firmdale|fish|fishing|fit|fitness|fj|fk|flickr|flights|flir|florist|flowers|fly|fm|fo|foo|food|football|ford|forex|forsale|forum|foundation|fox|fr|free|fresenius|frl|frogans|frontier|ftr|fujitsu|fun|fund|furniture|futbol|fyi|ga|gal|gallery|gallo|gallup|game|games|gap|garden|gay|gb|gbiz|gd|gdn|ge|gea|gent|genting|george|gf|gg|ggee|gh|gi|gift|gifts|gives|giving|gl|glass|gle|global|globo|gm|gmail|gmbh|gmo|gmx|gn|godaddy|gold|goldpoint|golf|goo|goodyear|goog|google|gop|got|gov|gp|gq|gr|grainger|graphics|gratis|green|gripe|grocery|group|gs|gt|gu|guardian|gucci|guge|guide|guitars|guru|gw|gy|hair|hamburg|hangout|haus|hbo|hdfc|hdfcbank|health|healthcare|help|helsinki|here|hermes|hiphop|hisamitsu|hitachi|hiv|hk|hkt|hm|hn|hockey|holdings|holiday|homedepot|homegoods|homes|homesense|honda|horse|hospital|host|hosting|hot|hotels|hotmail|house|how|hr|hsbc|ht|hu|hughes|hyatt|hyundai|ibm|icbc|ice|icu|id|ie|ieee|ifm|ikano|il|im|imamat|imdb|immo|immobilien|in|inc|industries|infiniti|info|ing|ink|institute|insurance|insure|int|international|intuit|investments|io|ipiranga|iq|ir|irish|is|ismaili|ist|istanbul|it|itau|itv|jaguar|java|jcb|je|jeep|jetzt|jewelry|jio|jll|jm|jmp|jnj|jo|jobs|joburg|jot|joy|jp|jpmorgan|jprs|juegos|juniper|kaufen|kddi|ke|kerryhotels|kerrylogistics|kerryproperties|kfh|kg|kh|ki|kia|kids|kim|kindle|kitchen|kiwi|km|kn|koeln|komatsu|kosher|kp|kpmg|kpn|kr|krd|kred|kuokgroup|kw|ky|kyoto|kz|la|lacaixa|lamborghini|lamer|lancaster|land|landrover|lanxess|lasalle|lat|latino|latrobe|law|lawyer|lb|lc|lds|lease|leclerc|lefrak|legal|lego|lexus|lgbt|li|lidl|life|lifeinsurance|lifestyle|lighting|like|lilly|limited|limo|lincoln|link|lipsy|live|living|lk|llc|llp|loan|loans|locker|locus|lol|london|lotte|lotto|love|lpl|lplfinancial|lr|ls|lt|ltd|ltda|lu|lundbeck|luxe|luxury|lv|ly|ma|madrid|maif|maison|makeup|man|management|mango|map|market|marketing|markets|marriott|marshalls|mattel|mba|mc|mckinsey|md|me|med|media|meet|melbourne|meme|memorial|men|menu|merckmsd|mg|mh|miami|microsoft|mil|mini|mint|mit|mitsubishi|mk|ml|mlb|mls|mm|mma|mn|mo|mobi|mobile|moda|moe|moi|mom|monash|money|monster|mormon|mortgage|moscow|moto|motorcycles|mov|movie|mp|mq|mr|ms|msd|mt|mtn|mtr|mu|museum|music|mv|mw|mx|my|mz|na|nab|nagoya|name|natura|navy|nba|nc|ne|nec|net|netbank|netflix|network|neustar|new|news|next|nextdirect|nexus|nf|nfl|ng|ngo|nhk|ni|nico|nike|nikon|ninja|nissan|nissay|nl|no|nokia|norton|now|nowruz|nowtv|np|nr|nra|nrw|ntt|nu|nyc|nz|obi|observer|office|okinawa|olayan|olayangroup|oldnavy|ollo|om|omega|one|ong|onl|online|ooo|open|oracle|orange|org|organic|origins|osaka|otsuka|ott|ovh|pa|page|panasonic|paris|pars|partners|parts|party|pay|pccw|pe|pet|pf|pfizer|pg|ph|pharmacy|phd|philips|phone|photo|photography|photos|physio|pics|pictet|pictures|pid|pin|ping|pink|pioneer|pizza|pk|pl|place|play|playstation|plumbing|plus|pm|pn|pnc|pohl|poker|politie|porn|post|pr|pramerica|praxi|press|prime|pro|prod|productions|prof|progressive|promo|properties|property|protection|pru|prudential|ps|pt|pub|pw|pwc|qa|qpon|quebec|quest|racing|radio|re|read|realestate|realtor|realty|recipes|red|redstone|redumbrella|rehab|reise|reisen|reit|reliance|ren|rent|rentals|repair|report|republican|rest|restaurant|review|reviews|rexroth|rich|richardli|ricoh|ril|rio|rip|ro|rocks|rodeo|rogers|room|rs|rsvp|ru|rugby|ruhr|run|rw|rwe|ryukyu|sa|saarland|safe|safety|sakura|sale|salon|samsclub|samsung|sandvik|sandvikcoromant|sanofi|sap|sarl|sas|save|saxo|sb|sbi|sbs|sc|scb|schaeffler|schmidt|scholarships|school|schule|schwarz|science|scot|sd|se|search|seat|secure|security|seek|select|sener|services|seven|sew|sex|sexy|sfr|sg|shangrila|sharp|shaw|shell|shia|shiksha|shoes|shop|shopping|shouji|show|si|silk|sina|singles|site|sj|sk|ski|skin|sky|skype|sl|sling|sm|smart|smile|sn|sncf|so|soccer|social|softbank|software|sohu|solar|solutions|song|sony|soy|spa|space|sport|spot|sr|srl|ss|st|stada|staples|star|statebank|statefarm|stc|stcgroup|stockholm|storage|store|stream|studio|study|style|su|sucks|supplies|supply|support|surf|surgery|suzuki|sv|swatch|swiss|sx|sy|sydney|systems|sz|tab|taipei|talk|taobao|tatamotors|tatar|tattoo|tax|taxi|tc|tci|td|tdk|team|tech|technology|tel|temasek|tennis|teva|tf|tg|th|thd|theater|theatre|tiaa|tickets|tienda|tips|tires|tirol|tj|tjmaxx|tjx|tk|tkmaxx|tl|tm|tmall|tn|to|today|tokyo|tools|top|toray|toshiba|total|tours|town|toyota|toys|tr|trade|trading|training|travel|travelers|travelersinsurance|trust|trv|tt|tube|tui|tunes|tushu|tv|tvs|tw|tz|ua|ubank|ubs|ug|uk|unicom|university|uno|uol|ups|us|uy|uz|va|vacations|vana|vanguard|vc|ve|vegas|ventures|verisign|versicherung|vet|vg|vi|viajes|video|vig|viking|villas|vin|vip|virgin|visa|vision|viva|vivo|vlaanderen|vn|vodka|volvo|vote|voting|voto|voyage|vu|wales|walmart|walter|wang|wanggou|watch|watches|weather|weatherchannel|webcam|weber|website|wed|wedding|weibo|weir|wf|whoswho|wien|wiki|williamhill|win|windows|wine|winners|wme|wolterskluwer|woodside|work|works|world|wow|ws|wtc|wtf|xbox|xerox|xfinity|xihuan|xin|xxx|xyz|yachts|yahoo|yamaxun|yandex|ye|yodobashi|yoga|yokohama|you|youtube|yt|yun|za|zappos|zara|zero|zip|zm|zone|zuerich|zw)\b(?:[-a-zA-Z0-9@:%_\+.~#?!&//=]*)(?:<\/a>)?)(?: *\n(.*))?\n{2}/g,
 		(match: any, link: string, caption: string) => {
 			const replacePromise = (async () => {
 				if (link.includes("twitter.com") || link.includes("x.com") || link.includes("youtube.com") || link.includes("vimeo.com") || link.includes("unsplash.com") || link.includes("codepen.io") || link.includes("spotify.com") || link.includes("soundcloud.com")) {
@@ -765,7 +969,7 @@ export const publishPost = async (
 						const thumbnail = parsedResponse.metadata.thumbnail;
 						const icon = parsedResponse.metadata.icon;
 
-						let htmlContent = `<a class="kg-bookmark-container" href="${url}"><div class="kg-bookmark-content"><div class="kg-bookmark-title">${title}</div><div class="kg-bookmark-description">${description}</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="${icon}" alt=""><span class="kg-bookmark-author">${author}</span><span class="kg-bookmark-publisher">${publisher}</span></div></div><div class="kg-bookmark-thumbnail"><img src="${thumbnail}" alt=""></div></a>`;
+						let htmlContent = `<a class="kg-bookmark-container" href="${url}"><div class="kg-bookmark-content"><div class="kg-bookmark-title">${title}</div><div class="kg-bookmark-description">${description}</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="${icon}" alt=""><span class="kg-bookmark-author">${author ? author : ""}</span><span class="kg-bookmark-publisher">${publisher ? publisher : ""}</span></div></div><div class="kg-bookmark-thumbnail"><img src="${thumbnail}" alt=""></div></a>`;
 
 						// Make it into a bookmark card
 						htmlContent = `<figure class="kg-card kg-bookmark-card ${caption ? "kg-card-hascaption" : ""}">${htmlContent}${caption ? `<figcaption><p><span>${caption}</span></p></figcaption>` : ""}</figure>`;
@@ -1031,8 +1235,16 @@ export const publishPost = async (
 	data.content = data.content.replace(
 		/!\[(.*?)\]\((.*?)\)(?: *\n(.*))?/g,
 		(match: any, p1: string, link: string, imageCaption: string) => {
-			let alt = p1;
-			return `<figure class="kg-card kg-image-card"><img class="kg-image" alt="${alt}" src="${link}"></img>${imageCaption ? `<figcaption>${imageCaption}</figcaption>` : ""}</figure>`;
+			let alt;
+			let width;
+			if (p1.includes('(wide)')) {
+				width = "kg-width-wide";alt = p1.replace('(wide)',"");
+			} else if (p1.includes('(full)')) {
+				width = "kg-width-full";alt = p1.replace('(full)',"");
+		 	} else {
+				alt = p1;
+			}
+			return `<figure class="kg-card kg-image-card ${width ? width : alt}"><img class="kg-image" alt="${alt}" src="${link}"></img>${imageCaption ? `<figcaption>${imageCaption}</figcaption>` : ""}</figure>`;
 		}
 	);
 
@@ -1042,9 +1254,9 @@ export const publishPost = async (
 		/\[(.*?)\]\((.*?)\)(?: *\n(.*))?/g,
 		(match: any, p1: string, link: string, imageCaption: string) => {
 			let result;
-			if (/((?:(?:href|src|xmlns)="\s*)?(?:http(?:s)?:\/\/)?\b(?:[-a-zA-Z0-9@:%_\+~#=]\.?){2,256}\.(?!(?:pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|txt|rtf|html|htm|csv|xml|zip|rar|7z|tar|gz|mp3|mp4|avi|mov|mkv|flv|wav|ogg|flac|mpg|mpeg|bmp|tif|tiff|eps|ai|psd|svg|css|js|php|asp|py|cpp|java|jar|bat|sh|log|json|yaml|ini|cfg|db|sql|sqlite|pdf|djvu|txt|rtf|html|md|epub|pptm|pptx|docm|dotx|xlsx|xlsm|xlsb|odt|ods|odp|odg|pptx|pptm|odp|txt|ini|json|csv|sql|sqlitedb|tar|gz|xml|yaml|yml|jpg|jpeg|png|bmp|gif|tiff|doc|docx|pdf|xls|xlsx|ppt|pptx|log|zip|html|css|js|php|asp|svg|psd|ico|cur|wav|mp3|avi|mp4|mkv|mov|flv|exe|msi|bat|cmd|jar|app|deb|rpm|sh|vb|vbs|bin|so|tar.gz|tgz|ko|elf|sh|bash|zsh|cli|dev.log))[a-z]{2,6}\b(?:[-a-zA-Z0-9@:%_\+.~#?&//=]*))/.test(link)) {
+			if (/((?:(?:href|src|xmlns)="\s*)?(?:mailto:)?(?:http(?:s)?:\/\/)?\b(?:[-a-zA-Z0-9@%_\+~#=]\.?){2,256}\.(?:aaa|aarp|abb|abbott|abbvie|abc|able|abogado|abudhabi|ac|academy|accenture|accountant|accountants|aco|actor|ad|ads|adult|ae|aeg|aero|aetna|af|afl|africa|ag|agakhan|agency|ai|aig|airbus|airforce|airtel|akdn|al|alibaba|alipay|allfinanz|allstate|ally|alsace|alstom|am|amazon|americanexpress|americanfamily|amex|amfam|amica|amsterdam|analytics|android|anquan|anz|ao|aol|apartments|app|apple|aq|aquarelle|ar|arab|aramco|archi|army|arpa|art|arte|as|asda|asia|associates|at|athleta|attorney|au|auction|audi|audible|audio|auspost|author|auto|autos|avianca|aw|aws|ax|axa|az|azure|ba|baby|baidu|banamex|bananarepublic|band|bank|bar|barcelona|barclaycard|barclays|barefoot|bargains|baseball|basketball|bauhaus|bayern|bb|bbc|bbt|bbva|bcg|bcn|bd|be|beats|beauty|beer|bentley|berlin|best|bestbuy|bet|bf|bg|bh|bharti|bi|bible|bid|bike|bing|bingo|bio|biz|bj|black|blackfriday|blockbuster|blog|bloomberg|blue|bm|bms|bmw|bn|bnpparibas|bo|boats|boehringer|bofa|bom|bond|boo|book|booking|bosch|bostik|boston|bot|boutique|box|br|bradesco|bridgestone|broadway|broker|brother|brussels|bs|bt|build|builders|business|buy|buzz|bv|bw|by|bz|bzh|ca|cab|cafe|cal|call|calvinklein|cam|camera|camp|canon|capetown|capital|capitalone|car|caravan|cards|care|career|careers|cars|casa|case|cash|casino|cat|catering|catholic|cba|cbn|cbre|cc|cd|center|ceo|cern|cf|cfa|cfd|cg|ch|chanel|channel|charity|chase|chat|cheap|chintai|christmas|chrome|church|ci|cipriani|circle|cisco|citadel|citi|citic|city|ck|cl|claims|cleaning|click|clinic|clinique|clothing|cloud|club|clubmed|cm|cn|co|coach|codes|coffee|college|cologne|com|comcast|commbank|community|company|compare|computer|comsec|condos|construction|consulting|contact|contractors|cooking|cool|coop|corsica|country|coupon|coupons|courses|cpa|cr|credit|creditcard|creditunion|cricket|crown|crs|cruise|cruises|cu|cuisinella|cv|cw|cx|cy|cymru|cyou|cz|dabur|dad|dance|data|date|dating|datsun|day|dclk|dds|de|deal|dealer|deals|degree|delivery|dell|deloitte|delta|democrat|dental|dentist|desi|design|dev|dhl|diamonds|diet|digital|direct|directory|discount|discover|dish|diy|dj|dk|dm|dnp|do|docs|doctor|dog|domains|dot|download|drive|dtv|dubai|dunlop|dupont|durban|dvag|dvr|dz|earth|eat|ec|eco|edeka|edu|education|ee|eg|email|emerck|energy|engineer|engineering|enterprises|epson|equipment|er|ericsson|erni|es|esq|estate|et|eu|eurovision|eus|events|exchange|expert|exposed|express|extraspace|fage|fail|fairwinds|faith|family|fan|fans|farm|farmers|fashion|fast|fedex|feedback|ferrari|ferrero|fi|fidelity|fido|film|final|finance|financial|fire|firestone|firmdale|fish|fishing|fit|fitness|fj|fk|flickr|flights|flir|florist|flowers|fly|fm|fo|foo|food|football|ford|forex|forsale|forum|foundation|fox|fr|free|fresenius|frl|frogans|frontier|ftr|fujitsu|fun|fund|furniture|futbol|fyi|ga|gal|gallery|gallo|gallup|game|games|gap|garden|gay|gb|gbiz|gd|gdn|ge|gea|gent|genting|george|gf|gg|ggee|gh|gi|gift|gifts|gives|giving|gl|glass|gle|global|globo|gm|gmail|gmbh|gmo|gmx|gn|godaddy|gold|goldpoint|golf|goo|goodyear|goog|google|gop|got|gov|gp|gq|gr|grainger|graphics|gratis|green|gripe|grocery|group|gs|gt|gu|guardian|gucci|guge|guide|guitars|guru|gw|gy|hair|hamburg|hangout|haus|hbo|hdfc|hdfcbank|health|healthcare|help|helsinki|here|hermes|hiphop|hisamitsu|hitachi|hiv|hk|hkt|hm|hn|hockey|holdings|holiday|homedepot|homegoods|homes|homesense|honda|horse|hospital|host|hosting|hot|hotels|hotmail|house|how|hr|hsbc|ht|hu|hughes|hyatt|hyundai|ibm|icbc|ice|icu|id|ie|ieee|ifm|ikano|il|im|imamat|imdb|immo|immobilien|in|inc|industries|infiniti|info|ing|ink|institute|insurance|insure|int|international|intuit|investments|io|ipiranga|iq|ir|irish|is|ismaili|ist|istanbul|it|itau|itv|jaguar|java|jcb|je|jeep|jetzt|jewelry|jio|jll|jm|jmp|jnj|jo|jobs|joburg|jot|joy|jp|jpmorgan|jprs|juegos|juniper|kaufen|kddi|ke|kerryhotels|kerrylogistics|kerryproperties|kfh|kg|kh|ki|kia|kids|kim|kindle|kitchen|kiwi|km|kn|koeln|komatsu|kosher|kp|kpmg|kpn|kr|krd|kred|kuokgroup|kw|ky|kyoto|kz|la|lacaixa|lamborghini|lamer|lancaster|land|landrover|lanxess|lasalle|lat|latino|latrobe|law|lawyer|lb|lc|lds|lease|leclerc|lefrak|legal|lego|lexus|lgbt|li|lidl|life|lifeinsurance|lifestyle|lighting|like|lilly|limited|limo|lincoln|link|lipsy|live|living|lk|llc|llp|loan|loans|locker|locus|lol|london|lotte|lotto|love|lpl|lplfinancial|lr|ls|lt|ltd|ltda|lu|lundbeck|luxe|luxury|lv|ly|ma|madrid|maif|maison|makeup|man|management|mango|map|market|marketing|markets|marriott|marshalls|mattel|mba|mc|mckinsey|md|me|med|media|meet|melbourne|meme|memorial|men|menu|merckmsd|mg|mh|miami|microsoft|mil|mini|mint|mit|mitsubishi|mk|ml|mlb|mls|mm|mma|mn|mo|mobi|mobile|moda|moe|moi|mom|monash|money|monster|mormon|mortgage|moscow|moto|motorcycles|mov|movie|mp|mq|mr|ms|msd|mt|mtn|mtr|mu|museum|music|mv|mw|mx|my|mz|na|nab|nagoya|name|natura|navy|nba|nc|ne|nec|net|netbank|netflix|network|neustar|new|news|next|nextdirect|nexus|nf|nfl|ng|ngo|nhk|ni|nico|nike|nikon|ninja|nissan|nissay|nl|no|nokia|norton|now|nowruz|nowtv|np|nr|nra|nrw|ntt|nu|nyc|nz|obi|observer|office|okinawa|olayan|olayangroup|oldnavy|ollo|om|omega|one|ong|onl|online|ooo|open|oracle|orange|org|organic|origins|osaka|otsuka|ott|ovh|pa|page|panasonic|paris|pars|partners|parts|party|pay|pccw|pe|pet|pf|pfizer|pg|ph|pharmacy|phd|philips|phone|photo|photography|photos|physio|pics|pictet|pictures|pid|pin|ping|pink|pioneer|pizza|pk|pl|place|play|playstation|plumbing|plus|pm|pn|pnc|pohl|poker|politie|porn|post|pr|pramerica|praxi|press|prime|pro|prod|productions|prof|progressive|promo|properties|property|protection|pru|prudential|ps|pt|pub|pw|pwc|qa|qpon|quebec|quest|racing|radio|re|read|realestate|realtor|realty|recipes|red|redstone|redumbrella|rehab|reise|reisen|reit|reliance|ren|rent|rentals|repair|report|republican|rest|restaurant|review|reviews|rexroth|rich|richardli|ricoh|ril|rio|rip|ro|rocks|rodeo|rogers|room|rs|rsvp|ru|rugby|ruhr|run|rw|rwe|ryukyu|sa|saarland|safe|safety|sakura|sale|salon|samsclub|samsung|sandvik|sandvikcoromant|sanofi|sap|sarl|sas|save|saxo|sb|sbi|sbs|sc|scb|schaeffler|schmidt|scholarships|school|schule|schwarz|science|scot|sd|se|search|seat|secure|security|seek|select|sener|services|seven|sew|sex|sexy|sfr|sg|shangrila|sharp|shaw|shell|shia|shiksha|shoes|shop|shopping|shouji|show|si|silk|sina|singles|site|sj|sk|ski|skin|sky|skype|sl|sling|sm|smart|smile|sn|sncf|so|soccer|social|softbank|software|sohu|solar|solutions|song|sony|soy|spa|space|sport|spot|sr|srl|ss|st|stada|staples|star|statebank|statefarm|stc|stcgroup|stockholm|storage|store|stream|studio|study|style|su|sucks|supplies|supply|support|surf|surgery|suzuki|sv|swatch|swiss|sx|sy|sydney|systems|sz|tab|taipei|talk|taobao|tatamotors|tatar|tattoo|tax|taxi|tc|tci|td|tdk|team|tech|technology|tel|temasek|tennis|teva|tf|tg|th|thd|theater|theatre|tiaa|tickets|tienda|tips|tires|tirol|tj|tjmaxx|tjx|tk|tkmaxx|tl|tm|tmall|tn|to|today|tokyo|tools|top|toray|toshiba|total|tours|town|toyota|toys|tr|trade|trading|training|travel|travelers|travelersinsurance|trust|trv|tt|tube|tui|tunes|tushu|tv|tvs|tw|tz|ua|ubank|ubs|ug|uk|unicom|university|uno|uol|ups|us|uy|uz|va|vacations|vana|vanguard|vc|ve|vegas|ventures|verisign|versicherung|vet|vg|vi|viajes|video|vig|viking|villas|vin|vip|virgin|visa|vision|viva|vivo|vlaanderen|vn|vodka|volvo|vote|voting|voto|voyage|vu|wales|walmart|walter|wang|wanggou|watch|watches|weather|weatherchannel|webcam|weber|website|wed|wedding|weibo|weir|wf|whoswho|wien|wiki|williamhill|win|windows|wine|winners|wme|wolterskluwer|woodside|work|works|world|wow|ws|wtc|wtf|xbox|xerox|xfinity|xihuan|xin|xxx|xyz|yachts|yahoo|yamaxun|yandex|ye|yodobashi|yoga|yokohama|you|youtube|yt|yun|za|zappos|zara|zero|zip|zm|zone|zuerich|zw)\b(?:[-a-zA-Z0-9@:%_\+.~#?!&//=]*)(?:<\/a>)?)/.test(link)) {
 				let linkText = p1;
-				result = `<a href="${link}">${linkText}</a>`;
+				return `<a href="${link}">${linkText}</a>`;
 			} else {
 				let meaning = link;
 				let acronym = p1;
@@ -1055,9 +1267,9 @@ export const publishPost = async (
 
 	// replaces remaining links with a-tags
 	data.content = data.content.replace(
-		/((?:(?:href|src|xmlns)="\s*)?(?:http(?:s)?:\/\/)?\b(?:[-a-zA-Z0-9@:%_\+~#=]\.?){2,256}\.(?!(?:pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|gif|txt|rtf|html|htm|csv|xml|zip|rar|7z|tar|gz|mp3|mp4|avi|mov|mkv|flv|wav|ogg|flac|mpg|mpeg|bmp|tif|tiff|eps|ai|psd|svg|css|js|php|asp|py|cpp|java|jar|bat|sh|log|json|yaml|ini|cfg|db|sql|sqlite|djvu|txt|rtf|html|md|epub|pptm|pptx|docm|dotx|xlsx|xlsm|xlsb|odt|ods|odp|odg|pptx|pptm|odp|txt|ini|json|csv|sql|sqlitedb|tar|gz|xml|yaml|yml|jpg|jpeg|png|bmp|gif|tiff|doc|docx|xls|xlsx|ppt|pptx|log|zip|html|css|js|php|asp|svg|psd|ico|cur|wav|mp3|avi|mp4|mkv|mov|flv|exe|msi|bat|cmd|jar|app|deb|rpm|sh|vb|vbs|bin|so|tar.gz|tgz|ko|elf|sh|bash|zsh|cli|dev.log))[a-z]{2,6}\b(?:[-a-zA-Z0-9@:%_\+.~#?&//=]*))/g,
+		/((?:(?:href|src|xmlns)="\s*)?(?:mailto:)?(?:http(?:s)?:\/\/)?\b(?:[-a-zA-Z0-9@%_\+~#=]\.?){2,256}\.(?:aaa|aarp|abb|abbott|abbvie|abc|able|abogado|abudhabi|ac|academy|accenture|accountant|accountants|aco|actor|ad|ads|adult|ae|aeg|aero|aetna|af|afl|africa|ag|agakhan|agency|ai|aig|airbus|airforce|airtel|akdn|al|alibaba|alipay|allfinanz|allstate|ally|alsace|alstom|am|amazon|americanexpress|americanfamily|amex|amfam|amica|amsterdam|analytics|android|anquan|anz|ao|aol|apartments|app|apple|aq|aquarelle|ar|arab|aramco|archi|army|arpa|art|arte|as|asda|asia|associates|at|athleta|attorney|au|auction|audi|audible|audio|auspost|author|auto|autos|avianca|aw|aws|ax|axa|az|azure|ba|baby|baidu|banamex|bananarepublic|band|bank|bar|barcelona|barclaycard|barclays|barefoot|bargains|baseball|basketball|bauhaus|bayern|bb|bbc|bbt|bbva|bcg|bcn|bd|be|beats|beauty|beer|bentley|berlin|best|bestbuy|bet|bf|bg|bh|bharti|bi|bible|bid|bike|bing|bingo|bio|biz|bj|black|blackfriday|blockbuster|blog|bloomberg|blue|bm|bms|bmw|bn|bnpparibas|bo|boats|boehringer|bofa|bom|bond|boo|book|booking|bosch|bostik|boston|bot|boutique|box|br|bradesco|bridgestone|broadway|broker|brother|brussels|bs|bt|build|builders|business|buy|buzz|bv|bw|by|bz|bzh|ca|cab|cafe|cal|call|calvinklein|cam|camera|camp|canon|capetown|capital|capitalone|car|caravan|cards|care|career|careers|cars|casa|case|cash|casino|cat|catering|catholic|cba|cbn|cbre|cc|cd|center|ceo|cern|cf|cfa|cfd|cg|ch|chanel|channel|charity|chase|chat|cheap|chintai|christmas|chrome|church|ci|cipriani|circle|cisco|citadel|citi|citic|city|ck|cl|claims|cleaning|click|clinic|clinique|clothing|cloud|club|clubmed|cm|cn|co|coach|codes|coffee|college|cologne|com|comcast|commbank|community|company|compare|computer|comsec|condos|construction|consulting|contact|contractors|cooking|cool|coop|corsica|country|coupon|coupons|courses|cpa|cr|credit|creditcard|creditunion|cricket|crown|crs|cruise|cruises|cu|cuisinella|cv|cw|cx|cy|cymru|cyou|cz|dabur|dad|dance|data|date|dating|datsun|day|dclk|dds|de|deal|dealer|deals|degree|delivery|dell|deloitte|delta|democrat|dental|dentist|desi|design|dev|dhl|diamonds|diet|digital|direct|directory|discount|discover|dish|diy|dj|dk|dm|dnp|do|docs|doctor|dog|domains|dot|download|drive|dtv|dubai|dunlop|dupont|durban|dvag|dvr|dz|earth|eat|ec|eco|edeka|edu|education|ee|eg|email|emerck|energy|engineer|engineering|enterprises|epson|equipment|er|ericsson|erni|es|esq|estate|et|eu|eurovision|eus|events|exchange|expert|exposed|express|extraspace|fage|fail|fairwinds|faith|family|fan|fans|farm|farmers|fashion|fast|fedex|feedback|ferrari|ferrero|fi|fidelity|fido|film|final|finance|financial|fire|firestone|firmdale|fish|fishing|fit|fitness|fj|fk|flickr|flights|flir|florist|flowers|fly|fm|fo|foo|food|football|ford|forex|forsale|forum|foundation|fox|fr|free|fresenius|frl|frogans|frontier|ftr|fujitsu|fun|fund|furniture|futbol|fyi|ga|gal|gallery|gallo|gallup|game|games|gap|garden|gay|gb|gbiz|gd|gdn|ge|gea|gent|genting|george|gf|gg|ggee|gh|gi|gift|gifts|gives|giving|gl|glass|gle|global|globo|gm|gmail|gmbh|gmo|gmx|gn|godaddy|gold|goldpoint|golf|goo|goodyear|goog|google|gop|got|gov|gp|gq|gr|grainger|graphics|gratis|green|gripe|grocery|group|gs|gt|gu|guardian|gucci|guge|guide|guitars|guru|gw|gy|hair|hamburg|hangout|haus|hbo|hdfc|hdfcbank|health|healthcare|help|helsinki|here|hermes|hiphop|hisamitsu|hitachi|hiv|hk|hkt|hm|hn|hockey|holdings|holiday|homedepot|homegoods|homes|homesense|honda|horse|hospital|host|hosting|hot|hotels|hotmail|house|how|hr|hsbc|ht|hu|hughes|hyatt|hyundai|ibm|icbc|ice|icu|id|ie|ieee|ifm|ikano|il|im|imamat|imdb|immo|immobilien|in|inc|industries|infiniti|info|ing|ink|institute|insurance|insure|int|international|intuit|investments|io|ipiranga|iq|ir|irish|is|ismaili|ist|istanbul|it|itau|itv|jaguar|java|jcb|je|jeep|jetzt|jewelry|jio|jll|jm|jmp|jnj|jo|jobs|joburg|jot|joy|jp|jpmorgan|jprs|juegos|juniper|kaufen|kddi|ke|kerryhotels|kerrylogistics|kerryproperties|kfh|kg|kh|ki|kia|kids|kim|kindle|kitchen|kiwi|km|kn|koeln|komatsu|kosher|kp|kpmg|kpn|kr|krd|kred|kuokgroup|kw|ky|kyoto|kz|la|lacaixa|lamborghini|lamer|lancaster|land|landrover|lanxess|lasalle|lat|latino|latrobe|law|lawyer|lb|lc|lds|lease|leclerc|lefrak|legal|lego|lexus|lgbt|li|lidl|life|lifeinsurance|lifestyle|lighting|like|lilly|limited|limo|lincoln|link|lipsy|live|living|lk|llc|llp|loan|loans|locker|locus|lol|london|lotte|lotto|love|lpl|lplfinancial|lr|ls|lt|ltd|ltda|lu|lundbeck|luxe|luxury|lv|ly|ma|madrid|maif|maison|makeup|man|management|mango|map|market|marketing|markets|marriott|marshalls|mattel|mba|mc|mckinsey|md|me|med|media|meet|melbourne|meme|memorial|men|menu|merckmsd|mg|mh|miami|microsoft|mil|mini|mint|mit|mitsubishi|mk|ml|mlb|mls|mm|mma|mn|mo|mobi|mobile|moda|moe|moi|mom|monash|money|monster|mormon|mortgage|moscow|moto|motorcycles|mov|movie|mp|mq|mr|ms|msd|mt|mtn|mtr|mu|museum|music|mv|mw|mx|my|mz|na|nab|nagoya|name|natura|navy|nba|nc|ne|nec|net|netbank|netflix|network|neustar|new|news|next|nextdirect|nexus|nf|nfl|ng|ngo|nhk|ni|nico|nike|nikon|ninja|nissan|nissay|nl|no|nokia|norton|now|nowruz|nowtv|np|nr|nra|nrw|ntt|nu|nyc|nz|obi|observer|office|okinawa|olayan|olayangroup|oldnavy|ollo|om|omega|one|ong|onl|online|ooo|open|oracle|orange|org|organic|origins|osaka|otsuka|ott|ovh|pa|page|panasonic|paris|pars|partners|parts|party|pay|pccw|pe|pet|pf|pfizer|pg|ph|pharmacy|phd|philips|phone|photo|photography|photos|physio|pics|pictet|pictures|pid|pin|ping|pink|pioneer|pizza|pk|pl|place|play|playstation|plumbing|plus|pm|pn|pnc|pohl|poker|politie|porn|post|pr|pramerica|praxi|press|prime|pro|prod|productions|prof|progressive|promo|properties|property|protection|pru|prudential|ps|pt|pub|pw|pwc|qa|qpon|quebec|quest|racing|radio|re|read|realestate|realtor|realty|recipes|red|redstone|redumbrella|rehab|reise|reisen|reit|reliance|ren|rent|rentals|repair|report|republican|rest|restaurant|review|reviews|rexroth|rich|richardli|ricoh|ril|rio|rip|ro|rocks|rodeo|rogers|room|rs|rsvp|ru|rugby|ruhr|run|rw|rwe|ryukyu|sa|saarland|safe|safety|sakura|sale|salon|samsclub|samsung|sandvik|sandvikcoromant|sanofi|sap|sarl|sas|save|saxo|sb|sbi|sbs|sc|scb|schaeffler|schmidt|scholarships|school|schule|schwarz|science|scot|sd|se|search|seat|secure|security|seek|select|sener|services|seven|sew|sex|sexy|sfr|sg|shangrila|sharp|shaw|shell|shia|shiksha|shoes|shop|shopping|shouji|show|si|silk|sina|singles|site|sj|sk|ski|skin|sky|skype|sl|sling|sm|smart|smile|sn|sncf|so|soccer|social|softbank|software|sohu|solar|solutions|song|sony|soy|spa|space|sport|spot|sr|srl|ss|st|stada|staples|star|statebank|statefarm|stc|stcgroup|stockholm|storage|store|stream|studio|study|style|su|sucks|supplies|supply|support|surf|surgery|suzuki|sv|swatch|swiss|sx|sy|sydney|systems|sz|tab|taipei|talk|taobao|tatamotors|tatar|tattoo|tax|taxi|tc|tci|td|tdk|team|tech|technology|tel|temasek|tennis|teva|tf|tg|th|thd|theater|theatre|tiaa|tickets|tienda|tips|tires|tirol|tj|tjmaxx|tjx|tk|tkmaxx|tl|tm|tmall|tn|to|today|tokyo|tools|top|toray|toshiba|total|tours|town|toyota|toys|tr|trade|trading|training|travel|travelers|travelersinsurance|trust|trv|tt|tube|tui|tunes|tushu|tv|tvs|tw|tz|ua|ubank|ubs|ug|uk|unicom|university|uno|uol|ups|us|uy|uz|va|vacations|vana|vanguard|vc|ve|vegas|ventures|verisign|versicherung|vet|vg|vi|viajes|video|vig|viking|villas|vin|vip|virgin|visa|vision|viva|vivo|vlaanderen|vn|vodka|volvo|vote|voting|voto|voyage|vu|wales|walmart|walter|wang|wanggou|watch|watches|weather|weatherchannel|webcam|weber|website|wed|wedding|weibo|weir|wf|whoswho|wien|wiki|williamhill|win|windows|wine|winners|wme|wolterskluwer|woodside|work|works|world|wow|ws|wtc|wtf|xbox|xerox|xfinity|xihuan|xin|xxx|xyz|yachts|yahoo|yamaxun|yandex|ye|yodobashi|yoga|yokohama|you|youtube|yt|yun|za|zappos|zara|zero|zip|zm|zone|zuerich|zw)\b(?:[-a-zA-Z0-9@:%_\+.~#?!&//=]*)(?:<\/a>)?)/g,
 		(match: any, p1: string) => {
-			if (p1.includes('href="') || p1.includes('src="') || p1.includes('xmlns="')) {
+			if (p1.includes('href="') || p1.includes('src="') || p1.includes('xmlns="') || p1.includes('</a>')) {
 				return p1;
 			} else {
 				return `<a href="${p1}">${p1}</a>`;
@@ -1141,6 +1353,12 @@ export const publishPost = async (
 				foldableBool = true;
 			} else {
 				foldableBool = false;
+			}
+
+			// If there is no title, make the type the title
+			if (!calloutTitle) {
+				calloutTitle = calloutType;
+				calloutTitle[0].toUpperCase();
 			}
 
 			calloutBody = calloutBody.replace(/^>\s*/gm, "");

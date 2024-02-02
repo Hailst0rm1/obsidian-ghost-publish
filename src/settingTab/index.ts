@@ -101,5 +101,18 @@ export class SettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName("First Image as Featured image")
+			.setDesc("If this is checked, the first image in the file will be removed and automatically set as featured image. This require the setting 'New Link Format' to be set to 'Absolute path in vault'. (Settings->Files and links)")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.firstAsFeatured)
+					.onChange(async (value) => {
+						console.log("First Image as Featured image " + value);
+						this.plugin.settings.firstAsFeatured = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
 	}
 }

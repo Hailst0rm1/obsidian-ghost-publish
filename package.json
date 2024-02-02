@@ -34,6 +34,7 @@
 		"@tryghost/admin-api": "^1.13.8",
 		"@types/axios": "^0.14.0",
 		"axios": "^1.5.0",
+		"cheerio": "^1.0.0-rc.12",
 		"fs": "^0.0.1-security",
 		"markdown-it-footnote": "^3.0.3",
 		"mime-types": "^2.1.35",

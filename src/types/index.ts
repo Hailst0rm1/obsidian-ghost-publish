@@ -3,6 +3,7 @@ export interface SettingsProp {
 	adminToken: string;
 	baseURL: string;
 	imageFolder: string;
+	firstAsFeatured: boolean;
 }
 
 export const DEFAULT_SETTINGS: SettingsProp = {
@@ -10,6 +11,7 @@ export const DEFAULT_SETTINGS: SettingsProp = {
 	adminToken: "",
 	baseURL: "",
 	imageFolder: "",
+	firstAsFeatured: true,
 };
 
 export interface ContentProp {
